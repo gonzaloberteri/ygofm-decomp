@@ -319,3 +319,48 @@ so this clean split is also the best evidence the matching is sound.
 **The decompilation target is ~397 KB, not 1.86 MB.** Successive corrections
 have taken it from 1.86 MB (raw file) to 525 KB (code only) to 397 KB (code
 Konami actually wrote).
+
+### 2026-07-24 — M7a/M7b complete: the decompilation loop works
+
+**The original build configuration has been recovered:**
+
+| | |
+|---|---|
+| compiler | `CC1PSX.EXE` — GCC **2.95.2** (build 4.0), from Psy-Q 4.6 |
+| assembler | ASPSX **2.86**, reproduced by `maspsx` |
+| flags | **`-O3 -G8`** |
+
+The Psy-Q tools are 32-bit PE binaries, so they run natively under WOW64 with
+no emulation — the one place where Windows is genuinely easier than Linux for
+this work.
+
+Flags were recovered by search, not guesswork: `tools/flagsweep.py` compiles a
+file under 84 flag combinations and reports which byte-match. `-O2` gets simple
+leaf functions right but allocates a different register when loading a global
+through `%hi/%lo`; `-O3` is what the original used. Four functions across three
+files now match byte-for-byte.
+
+**Correction to section 0:** the claim that the game does no `$gp` addressing
+was wrong. It was inferred from `gp0 = 0` in the PS-EXE header, but the game
+sets `$gp` itself at startup rather than letting the loader do it — code such as
+`lw $v0, 0x554($gp)` is common. This is consistent with the recovered `-G8`,
+which places small objects in the small-data area. Expect `.sdata`/`.sbss`
+layout to matter when whole translation units start being linked.
+
+### Function inventory
+
+```
+1345 functions total
+ 676 game   (below 0x80073704)   99,265 instructions   397,060 bytes
+ 669 sdk    (above 0x80073704)   named by signature match
+ 208 game leaf functions (no jal/jalr) -- the natural starting set
+```
+
+### The loop, as it now stands
+
+```
+tools/funcs.py --candidates     pick a target
+tools/match.py src/foo.c        compile and compare, per function
+tools/flagsweep.py src/foo.c    when it does not match, search the flag space
+tools/build.py                  whole-binary SHA-1 gate, must stay green
+```
