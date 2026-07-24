@@ -282,3 +282,40 @@ Two notes worth carrying forward:
 Psy-Q library identification, using the archived 4.6/4.7 SDK.  The RCS tags in
 the binary (`sys.c v1.140`, 1998-01-12) pin the SDK generation, so SDK
 functions can be named by signature match rather than decompiled.
+
+### 2026-07-24 — M5 complete: Psy-Q SDK identified
+
+254 library objects matched, **401 SDK functions named**, covering 114,924 bytes
+= 21.9% of all code.  Build re-verified byte-identical after the re-split.
+
+Matching is exact, not fuzzy: the mask comes from each library object's own
+relocation table, so every field the linker would have patched (jal targets,
+%hi/%lo immediates, absolute words) is excluded and everything else must be
+identical.  There is no similarity threshold to tune.
+
+Two corrections were needed along the way, both worth recording:
+
+* The converted Psy-Q objects report `st_size == 0` for every symbol, and the
+  only other labels are `$lib/file.rel.text@offset` locals — which are *branch
+  targets inside* functions, not function starts.  Deriving sizes from them
+  produced ~5-instruction signatures that matched everywhere: 610 ambiguous
+  addresses and 165 overlaps.  Matching **whole object `.text` sections**
+  instead (an object's text is linked contiguously) dropped that to 32 and 6.
+* Where several objects still match the same bytes and disagree on the exported
+  names, no name is emitted.  27 addresses are deliberately left unnamed; a
+  wrong name is worse than no name.
+
+### The game/SDK boundary is now exact
+
+Every one of the 401 SDK symbols lies above `0x80073704`, and none below it.
+A false positive would almost certainly have landed somewhere in the game code,
+so this clean split is also the best evidence the matching is sound.
+
+```
+0x80012800 .. 0x80073704   Konami game code   ~397 KB   <- the real target
+0x80073704 .. 0x80092C00   Psy-Q SDK          ~128 KB   89.6% identified
+```
+
+**The decompilation target is ~397 KB, not 1.86 MB.** Successive corrections
+have taken it from 1.86 MB (raw file) to 525 KB (code only) to 397 KB (code
+Konami actually wrote).
