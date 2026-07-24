@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "Per-file compiler and assembler flags.",
+    "The assembler's -G is a separate knob from the compiler's: cc1 -G8 decides",
+    "which objects are eligible for the small-data area, but the assembler's -G",
+    "decides whether a reference is emitted as offset($gp) or as a %hi/%lo pair.",
+    "The original build did not use one setting throughout -- functions that",
+    "address through $gp need as_G 8, while functions that use %hi/%lo for a",
+    "symbol of the same size need as_G 0. Recover per file with tools/flagsweep.py."
+  ],
+  "default": { "opt": "-O3", "cc1_G": 8, "as_G": 0 },
+  "files": {
+    "src/gp_probe.c": { "as_G": 8 }
+  }
+}

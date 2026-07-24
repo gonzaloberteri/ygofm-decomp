@@ -26,6 +26,9 @@ LD = os.path.join(BIN, "mipsel-none-elf-ld.exe")
 OBJCOPY = os.path.join(BIN, "mipsel-none-elf-objcopy.exe")
 
 VRAM = 0x80010000
+# Set by the startup code at 0x80012A54; the linker needs it to resolve the
+# R_MIPS_GPREL16 relocations that small-data references compile down to.
+GP_BASE = 0x8009AF08
 BUILD = os.path.join(REPO, "build")
 ASFLAGS = ["-march=r3000", "-mabi=32", "-EL", "-no-pad-sections",
            "-I", os.path.join(REPO, "include")]
@@ -57,11 +60,18 @@ def compile_sources():
     inv = match.asm_inventory()
     decompiled, objs = set(), []
 
+    # Hand-written files win over anything tools/autodecomp.py generated: the
+    # automated pass regenerates src/auto/ wholesale and would otherwise
+    # collide with a curated version of the same function.
+    sources = []
     for dirpath, _, files in os.walk(src_root):
         for fn in sorted(files):
-            if not fn.endswith(".c"):
-                continue
-            src = os.path.join(dirpath, fn)
+            if fn.endswith(".c"):
+                sources.append(os.path.join(dirpath, fn))
+    sources.sort(key=lambda p: ("auto" in p.replace("\\", "/").split("/"), p))
+
+    for src in sources:
+        if True:
             rel = os.path.relpath(src, REPO).replace("\\", "/")
             obj = os.path.join(BUILD, "src", rel.replace("/", "_")[:-2] + ".o")
             os.makedirs(os.path.dirname(obj), exist_ok=True)
@@ -73,6 +83,8 @@ def compile_sources():
                 print("  skip %s: defines nothing known to the disassembly" % rel)
                 continue
 
+            if any(n in decompiled for n in known):
+                continue        # already claimed by a hand-written file
             ordered = sorted(known.items(), key=lambda kv: kv[1][0])
             start = ordered[0][1][0]
             span = ordered[-1][1][0] + ordered[-1][1][1] - start
@@ -157,6 +169,10 @@ def main():
     ld_path = os.path.join(BUILD, "link.ld")
     with open(ld_path, "w") as fp:
         fp.write('INCLUDE "%s"\n' % syms_ld.replace("\\", "/"))
+        # R_MIPS_GPREL16 relocations resolve to (symbol - _gp).  Defining _gp to
+        # the value the startup code loads means a small-data reference lands at
+        # the original offset without reconstructing the .sdata layout.
+        fp.write("_gp = 0x%08X;\n" % GP_BASE)
         fp.write("SECTIONS\n{\n")
         for vma, obj, sec in sorted(objs):
             fp.write('    .s%08X 0x%08X : { "%s"(%s) }\n'

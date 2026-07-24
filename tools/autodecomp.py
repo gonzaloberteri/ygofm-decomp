@@ -23,6 +23,7 @@ from match import asm_inventory, object_functions, original_words  # noqa: E402
 M2C = os.path.join(REPO, "tools", "m2c", "m2c.py")
 CC = os.path.join(REPO, "tools", "cc.py")
 ASM = os.path.join(REPO, "asm", "code_002800.s")
+CONTEXT = os.path.join(REPO, "build", "context.c")
 OUTDIR = os.path.join(REPO, "src", "auto")
 GAME_END = funcs_mod.GAME_END
 
@@ -30,10 +31,13 @@ HEADER = '#include "types.h"\n#include "m2c_macros.h"\n\n'
 
 
 def run_m2c(name):
-    r = subprocess.run(
-        [sys.executable, M2C, "--target", "mipsel-gcc-c", "--valid-syntax",
-         "--function", name, ASM],
-        capture_output=True, text=True)
+    cmd = [sys.executable, M2C, "--target", "mipsel-gcc-c", "--valid-syntax",
+           "--function", name]
+    # Real Psy-Q signatures for every callee; without them m2c guesses, which
+    # is a large part of why its output compiles to the wrong size.
+    if os.path.exists(CONTEXT):
+        cmd += ["--context", CONTEXT]
+    r = subprocess.run(cmd + [ASM], capture_output=True, text=True)
     if r.returncode != 0 or not r.stdout.strip():
         return None
     body = r.stdout

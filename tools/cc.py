@@ -23,12 +23,25 @@ CPP = os.path.join(REPO, "tools", "bin", "bin", "mipsel-none-elf-cpp.exe")
 MASPSX = os.path.join(REPO, "tools", "maspsx", "maspsx.py")
 
 ASPSX_VERSION = "2.86"
+CFLAGS_CONFIG = os.path.join(REPO, "config", "cflags.json")
+
+
+def flags_for(src):
+    """Per-file compiler/assembler flags, merged over the defaults."""
+    import json
+    cfg = {"default": {"opt": "-O3", "cc1_G": 8, "as_G": 0}, "files": {}}
+    if os.path.exists(CFLAGS_CONFIG):
+        cfg.update(json.load(open(CFLAGS_CONFIG)))
+    out = dict(cfg.get("default", {}))
+    rel = os.path.relpath(os.path.abspath(src), REPO).replace("\\", "/")
+    out.update(cfg.get("files", {}).get(rel, {}))
+    return out
 
 # Recovered by tools/flagsweep.py, not guessed.  -O2 gets simple leaf functions
 # right but picks a different register for globals accessed via %hi/%lo; -O3 is
 # what the original build used.  -G8 puts small objects in the small-data area,
 # which is why so much of the game addresses through $gp.
-CC1_FLAGS = ["-quiet", "-O3", "-G8", "-fgnu-linker", "-mgas"]
+CC1_BASE = ["-quiet", "-fgnu-linker", "-mgas"]
 INCLUDES = [os.path.join(PSYQ, "INCLUDE"), os.path.join(REPO, "include"),
             os.path.join(REPO, "src")]
 
@@ -54,13 +67,19 @@ def compile_c(src, obj, extra_flags=()):
     cpp_cmd += [src, tmp]
     run(cpp_cmd)
 
-    run([CC1] + CC1_FLAGS + list(extra_flags) + [tmp, "-o", asm])
+    fl = flags_for(src)
+    cc1_flags = CC1_BASE + [fl["opt"], "-G%d" % fl["cc1_G"]]
+    run([CC1] + cc1_flags + list(extra_flags) + [tmp, "-o", asm])
 
     with open(asm) as fp:
         stage = subprocess.run(
+            # --dont-force-G0 matters: maspsx injects -G0 by default, which
+            # cancels the small-data area and turns every gp-relative access
+            # back into a %hi/%lo pair.
             [sys.executable, MASPSX, "--aspsx-version", ASPSX_VERSION,
-             "--run-assembler", "--gnu-as-path", GNU_AS,
-             "-march=r3000", "-mabi=32", "-EL", "-O0", "-o", obj],
+             "--run-assembler", "--gnu-as-path", GNU_AS, "--dont-force-G0",
+             "-march=r3000", "-mabi=32", "-EL", "-G%d" % fl["as_G"],
+             "-O0", "-o", obj],
             stdin=fp, capture_output=True, text=True)
     if stage.returncode != 0:
         sys.stderr.write("maspsx/as failed:\n%s\n%s\n" % (stage.stdout, stage.stderr))

@@ -481,3 +481,44 @@ is weaker in this binary than hoped.
 Better signals to try next: per-function `.rodata` *ownership* (a table
 referenced by exactly one function is almost certainly in that function's unit),
 alignment padding between objects, and the `__FILE__` strings from `assert`.
+
+### 2026-07-24 — the $gp blocker is solved, and it did not need M6
+
+The earlier conclusion that half the binary was blocked behind translation-unit
+reconstruction was **wrong**, and pleasantly so.
+
+`R_MIPS_GPREL16` relocations resolve to `symbol - _gp`. So the small-data layout
+does not have to be rebuilt at all -- it is enough to
+
+1. assemble with `-G8` so a small-symbol reference is emitted as `offset($gp)`
+   plus a `GPREL16` relocation rather than a `%hi/%lo` pair, and
+2. define `_gp = 0x8009AF08` in the linker script, the value the startup code
+   loads.
+
+The linker then computes the offset, and because each symbol is already pinned
+to its true absolute address, it comes out right. First `$gp` function matched:
+
+```
+ours:      80015d0c:  a3800239   sb  zero,569(gp)
+original:  80015D0C:  390280A3   sb  $zero, 0x239($gp)
+```
+
+**33 functions now build from C, `$gp` included, and the binary still hashes
+`84747e64f6da8e764206ec203e489acf8c9dcf7d`.**
+
+Two traps on the way:
+
+* **maspsx injects `-G0` unless you pass `--dont-force-G0`**, which silently
+  cancels the small-data area and turns every gp-relative access back into a
+  `%hi/%lo` pair. This looked like a compiler problem for a while; it was a
+  wrapper default.
+* **The assembler's `-G` is a separate knob from the compiler's, and the
+  original build did not use one value throughout.** Turning on `as -G8`
+  globally *broke* functions that legitimately use `%hi/%lo` for a symbol small
+  enough to have been gp-addressed -- they got shorter by an instruction. So `-G`
+  is per translation unit, now configured in `config/cflags.json` with
+  `tools/flagsweep.py` to recover it per file.
+
+The practical consequence: **M6 is no longer a prerequisite for anything.** It
+stays useful for producing a readable source tree organised the way Konami's
+was, but it is no longer blocking matching. M8 is largely dissolved.
