@@ -1,0 +1,284 @@
+# Yu-Gi-Oh! Forbidden Memories (SLUS-01411) — Decompilation Plan
+
+Goal: a source tree that rebuilds a **byte-identical `SLUS_014.11`** and a **bootable CD image**,
+verified automatically by booting to a duel in DuckStation.
+
+---
+
+## 0. Facts established from the disc (verified, not assumed)
+
+Disc: `C:\Users\PC\Downloads\Yu-Gi-Oh! Forbidden Memories (USA)\*.bin/.cue`
+517,872,768 bytes · 220,184 sectors · MODE2/2352 · single track.
+
+```
+/SYSTEM.CNF                68 B    BOOT = cdrom:\SLUS_014.11;1   STACK = 801FFF00
+/SLUS_014.11        1,902,592 B    lba 24
+/DATA/SU.MRG        2,537,472 B    lba 954
+/DATA/SD_SE.DAT     1,521,664 B    lba 2193
+/DATA/SD_BGM.DAT   14,675,968 B    lba 2936
+/DATA/WA_MRG.MRG   37,748,736 B    lba 10102
+/DATA/MODEL.MRG   351,019,008 B    lba 28534
+/DATA/MASTER.XA     5,742,592 B    lba 199930
+/DATA/MOVIE.STR    35,430,400 B    lba 202734
+```
+
+PS-EXE header:
+
+| field | value |
+|---|---|
+| entry `pc0` | `0x800129D8` |
+| load `t_addr` | `0x80010000` |
+| size `t_size` | `0x001D0000` (1,900,544 B = 1856 KB) |
+| `sp` | `0x801FFFF0` |
+| `gp0` | `0x00000000` (no $gp addressing — simplifies everything) |
+
+**The entire game is one flat 1.86 MB executable. There are no overlays.**
+On a 2 MB console that means code + rodata + data are a single contiguous link unit,
+and the only thing streamed from disc is assets. This is the single most important
+structural fact: one splat config covers 100% of the executable code.
+
+### Toolchain fingerprints found inside the binary
+
+```
+$Id: intr.c,v 1.75  1997/02/07 09:00:36 makoto Exp $
+$Id: bios.c,v 1.86  1997/03/28 07:42:42 makoto Exp yos $
+$Id: sys.c,v  1.140 1998/01/12 07:52:27 noda  Exp yos $
+```
+
+These are **Psy-Q runtime RCS tags**. `sys.c v1.140 / 1998-01-12` pins the SDK to the
+Psy-Q 4.x line (4.0–4.4 window). This is worth a lot: every function that came from
+`libapi/libgpu/libgte/libspu/libcd/libsn` can be identified by **signature match against
+the real Psy-Q `.lib` objects** instead of being decompiled by hand.
+
+Leaked original source paths (from `assert` / debug format strings):
+
+```
+src/hirata/H_mctrl1.c     <- original tree layout: src/<programmer>/<module>.c
+S3000000.C
+```
+
+`Assertion failed: file "%s", line %d` is present, so more `__FILE__` strings should
+surface once the rodata is properly segmented — each one names a real translation unit.
+
+### Prior art survey
+
+There is **no existing decompilation** of this game (checked GitHub search API).
+There is, however, a mature *data-format* community whose work removes a large amount of
+guesswork about the asset side:
+
+- `forbidden-memories-coding/fmlib-cpp` — reads the game's files and patches the disc
+- `forbidden-memories-coding/fmscrambler` — randomizer; encodes card/drop table layouts
+- `xan1242/YGOFM-BGEx` — background image format
+- `GenericMadScientist/FM-Manip-Tool` — RNG routing (documents the PRNG)
+- Data Crystal RAM map — known RAM addresses for game state
+
+Reference PSX decomp projects to mirror in structure/tooling:
+`Xeeynamo/sotn-decomp`, `Caesar0007/NFSHS-PSX-decomp`, `theMagicalKarp/open-spyro`.
+
+---
+
+## 1. Strategy — why "boots to duel" comes early, not late
+
+The naive reading of this project is "write C until the game works", which would mean
+nothing boots for months. That is the wrong architecture.
+
+Instead: **the build is byte-identical and bootable from Milestone 2 onward**, because
+every function not yet written in C stays in the tree as extracted assembly and gets
+linked in. Progress is then measured as *percentage of the binary expressed as C*, while
+the boot test stays green the entire time.
+
+```
+                     +-----------------------------------------+
+  original EXE  -->  |  splat: disassemble to .s + .bin data    |
+                     +-----------------------------------------+
+                                       |
+                     +-----------------------------------------+
+                     |  assemble + link -> SLUS_014.11          |  <-- SHA-1 must equal original
+                     +-----------------------------------------+
+                                       |
+                     +-----------------------------------------+
+                     |  mkpsxiso -> .bin/.cue -> DuckStation    |  <-- boot-to-duel test
+                     +-----------------------------------------+
+                                       |
+              loop:  pick a .s  ->  m2c  ->  hand-fix C  ->  compile
+                     ->  asm-differ vs original  ->  match?  ->  commit
+                     (SHA-1 gate re-runs every single time)
+```
+
+The SHA-1 equality gate is what makes unattended work safe. A decompiled function is
+either bit-for-bit the same or it is rejected — there is no "looks right" failure mode
+and no drift. "Pixel perfect" falls out of byte-perfect for free.
+
+You said the final binaries don't need to match. I'm going to aim for matching anyway,
+because it is the only cheap oracle available: without it, verifying 1.86 MB of
+reimplemented gameplay logic means playing the game, and that does not scale to
+unattended operation. Where matching proves impossible for a specific function, the
+project falls back to an "equivalent" marker for that function only.
+
+---
+
+## 2. Milestones
+
+### M0 — Environment
+- Python 3.12 (`py -3`) is present and is enough for splat / spimdisasm / m2c / maspsx.
+- Need: `mipsel-none-elf` binutils (as, ld, objcopy) for Windows.
+- Need: Psy-Q 4.x compiler (`cc1psx` / `aspsx`) — these are native Win32 executables, so
+  they run directly on Windows; this is the one place where Windows is *easier* than Linux.
+- Fallback if Psy-Q binaries misbehave: GCC 2.95.2 + `maspsx`, which is the standard
+  substitute used by sotn-decomp and reproduces Psy-Q output closely.
+- No Docker/WSL required (WSL has no distro installed; not going to touch that).
+
+**Exit:** `mipsel-none-elf-as --version` and the compiler both run.
+
+### M1 — Repo skeleton + extraction
+- `tools/extract_disc.py` — pulls all 9 files out of the MODE2/2352 image, records
+  LBA + size + SHA-1 of each into `config/disc.json`.
+- Baseline SHA-1 of `SLUS_014.11` recorded as the build oracle.
+
+**Exit:** `py -3 tools/extract_disc.py` reproduces all files; hashes stored.
+
+### M2 — 100% assembly byte-matching rebuild ← **first real gate**
+- splat config: `rom 0x800 → 0x1D0800`, vram `0x80010000`, entry `0x800129D8`.
+- Iterate on: code/data boundary, jump-table detection, `.rodata` vs `.data` vs `.bss`,
+  `%hi/%lo` pairing. This is the fiddly part and where most of M2's time goes.
+- `tools/make_exe.py` reattaches the 2048-byte PS-EXE header.
+
+**Exit:** `SHA-1(build/SLUS_014.11) == SHA-1(original)`. Fully automatable, no judgement calls.
+
+### M3 — CD image rebuild + boot
+- `mkpsxiso` with an XML that pins every file to its **original LBA** (FM may read by
+  raw LBA rather than by filename — pinning removes that entire risk class).
+- Assets are `.incbin`'d unmodified from the extracted originals at this stage.
+
+**Exit:** rebuilt `.bin/.cue` boots in DuckStation to the title screen.
+
+### M4 — Automated boot-to-duel harness ← **the acceptance test you asked for**
+- DuckStation CLI batch launch against the rebuilt image.
+- A save state captured just before a duel starts is loaded into the rebuilt build;
+  since the binary is byte-identical, the state is valid.
+- Capture N frames at fixed frame numbers, compare perceptual hashes against frames
+  captured from the original disc. Any divergence fails the build.
+- Per your standing preference, I automate launch + frame capture; **you do the one-time
+  manual navigation** to record the "just before a duel" save state and the reference
+  frame set. That's the only step in the whole plan that needs a human.
+
+**Exit:** `py -3 tools/verify_boot.py` returns 0 on a rebuilt image and non-zero on a
+deliberately corrupted one.
+
+### M5 — Psy-Q library identification
+- Signature-match against real Psy-Q 4.x `.lib` objects (`psyq-obj-parser` → ELF → symbol
+  hashing) to auto-name every SDK function.
+- On comparable PSX titles this accounts for **15–25% of the binary**, resolved without
+  writing a single line of C.
+
+**Exit:** `progress.py` reports the SDK share; those functions are named and excluded from
+the hand-decompilation queue.
+
+### M6 — Translation-unit segmentation
+- Infer TU boundaries from function ordering, `.rodata` block ordering, alignment padding,
+  and recovered `__FILE__` strings. Reconstruct the `src/<programmer>/<module>.c` layout
+  hinted at by `src/hirata/H_mctrl1.c`.
+
+**Exit:** splat config split into named segments; each maps to one future `.c` file.
+
+### M7 — The decompilation grind (unattended loop)
+Per function, fully mechanical:
+1. `m2c` first pass on the `.s`
+2. clean the C until it compiles
+3. `asm-differ` against the original assembly
+4. iterate; `decomp-permuter` on stubborn register/stack-slot mismatches
+5. match → commit; SHA-1 gate re-runs
+
+Order of attack: leaf functions first, then callers; boot path and duel path prioritised
+so the most meaningful code is readable earliest.
+
+**Exit:** continuous. Tracked as a percentage, reported per session.
+
+### M8 — Data & assets
+Use `fmlib-cpp` / `fmscrambler` / `YGOFM-BGEx` knowledge to convert raw `.bin` data blobs
+into named, typed C structures (card DB, fusion table, drop tables, text). This is where
+the source becomes genuinely *readable* rather than merely correct.
+
+---
+
+## 3. Honest scope assessment
+
+M0–M4 — a byte-identical, bootable, automatically-verified build — is days of work and is
+almost entirely mechanical. **That is when the game boots to duel from this repo.**
+
+M5–M8 — 1.86 MB fully expressed as C — is community-scale. sotn-decomp has had dozens of
+contributors over several years for a comparable binary. I can grind it down function by
+function indefinitely and the percentage will climb steadily, but I'm not going to
+represent "100% decompiled" as something that arrives on a schedule.
+
+The plan is built so that the valuable, verifiable part lands first and never regresses.
+
+---
+
+## 4. Risks
+
+| Risk | Mitigation |
+|---|---|
+| Psy-Q Win32 binaries fail on Win10 | fall back to GCC 2.95.2 + maspsx |
+| Code/data boundary misdetection in a 1.86 MB flat blob | SHA-1 gate catches it immediately; iterate |
+| Game reads assets by raw LBA | pin LBAs in mkpsxiso XML from the start |
+| DuckStation not scriptable enough for frame capture | fall back to PCSX-Redux (Lua API, headless) for CI only |
+| Non-matching functions (compiler flag drift per-TU) | per-TU flag search; mark `NON_MATCHING` and move on |
+
+---
+
+## 5. Status log
+
+### 2026-07-24 — M0 through M4 complete
+
+| Milestone | Result |
+|---|---|
+| M0 toolchain | binutils 2.40 (`mipsel-none-elf`), mkpsxiso 2.30, splat 0.41.1 / spimdisasm 1.42.2, Psy-Q 4.6 + 4.7 archived for M5 |
+| M1 extraction | all 9 files extracted, SHA-1 baselines in `config/disc.json` |
+| M2 exe rebuild | **byte-identical** — `84747e64f6da8e764206ec203e489acf8c9dcf7d` |
+| M3 disc rebuild | **byte-identical, whole 517 MB image** — `d5785a41900a10968d4a28a390666c4b9879b796` |
+| M4 boot test | loads the in-duel save state on the rebuilt image and runs |
+
+### Revised scope — the binary is much smaller than it looks
+
+The 1.86 MB executable is **71.6% zero-fill**.  A single 1.09 MB `.bss`-style
+block sits at `0x8009B400..0x8013A000`, with more zero padding after it.  The
+actual content:
+
+| | bytes | share |
+|---|---|---|
+| code | 525,312 | 27.6% |
+| data | 200,704 | 10.6% |
+| zero | 1,174,528 | 61.8% |
+
+So the decompilation target is **~525 KB / ~129,000 MIPS instructions**, not
+1.86 MB.  That is a materially smaller project than the original estimate in
+section 3 — comparable to a mid-size PSX decomp rather than an
+sotn-scale one.
+
+### Layout recovered
+
+```
+0x000000..0x002800  data   (10 KB)
+0x002800..0x082C00  code   (525 KB, one contiguous region)
+0x082C00..0x1C9400  data + zero  (mostly the 1.09 MB bss block)
+0x1C9400..0x1D0000  zero
+```
+
+Two notes worth carrying forward:
+
+* The image **opens with a jump table at 0x2800**, not with `.text`.  splat's
+  section-ordered linker script cannot express data-before-code, so
+  `tools/build.py` generates its own script pinning every region to its exact
+  VMA.  An ld "section overlaps" error now catches a size regression earlier
+  and more clearly than a hash mismatch would.
+* Region boundaries must never cut a function.  Branches and `.L` local labels
+  cannot cross an object file, so short data pockets between code runs (jump
+  tables, inline rodata) are absorbed into the code region and left for
+  spimdisasm to classify internally.
+
+### Next: M5
+
+Psy-Q library identification, using the archived 4.6/4.7 SDK.  The RCS tags in
+the binary (`sys.c v1.140`, 1998-01-12) pin the SDK generation, so SDK
+functions can be named by signature match rather than decompiled.

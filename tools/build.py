@@ -1,0 +1,165 @@
+"""Assemble, link and verify SLUS_014.11 against the original.
+
+The binary interleaves data and code (it opens with a jump table at 0x2800,
+not with .text), so splat's section-ordered linker script can't express the
+layout.  Instead every region is pinned to its exact VMA in a generated script;
+an ld "section overlaps" error then means a region changed size, which is a
+louder and earlier failure than a hash mismatch at the end.
+
+Exit code 0 only when the rebuilt file is byte-identical to the original.
+"""
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BIN = os.path.join(REPO, "tools", "bin", "bin")
+AS = os.path.join(BIN, "mipsel-none-elf-as.exe")
+LD = os.path.join(BIN, "mipsel-none-elf-ld.exe")
+OBJCOPY = os.path.join(BIN, "mipsel-none-elf-objcopy.exe")
+
+VRAM = 0x80010000
+BUILD = os.path.join(REPO, "build")
+ASFLAGS = ["-march=r3000", "-mabi=32", "-EL", "-no-pad-sections",
+           "-I", os.path.join(REPO, "include")]
+
+
+def run(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print("FAILED: %s" % " ".join(os.path.basename(c) for c in cmd[:1]) +
+              " " + " ".join(cmd[1:]))
+        print(r.stdout)
+        print(r.stderr)
+        sys.exit(1)
+    return r
+
+
+def main():
+    regions = json.load(open(os.path.join(REPO, "config", "regions.json")))
+    os.makedirs(os.path.join(BUILD, "asm"), exist_ok=True)
+    os.makedirs(os.path.join(BUILD, "assets"), exist_ok=True)
+
+    objs = []          # (vma, object path, section name)
+
+    for r in regions:
+        name = "%s_%06X" % (r["kind"], r["start"])
+        vma = VRAM + r["start"]
+
+        if r["kind"] == "code":
+            src = os.path.join(REPO, "asm", name + ".s")
+            obj = os.path.join(BUILD, "asm", name + ".o")
+            run([AS] + ASFLAGS + ["-o", obj, src])
+            objs.append((vma, obj, ".text"))
+        else:
+            # wrap the raw bytes in a uniquely-named section so the linker
+            # script can pin it without any chance of merging or reordering
+            blob = os.path.join(REPO, "assets", name + ".bin")
+            sec = ".rgn_%06X" % r["start"]
+            wrap = os.path.join(BUILD, "assets", name + ".s")
+            with open(wrap, "w") as fp:
+                fp.write('.section %s, "a"\n.incbin "%s"\n'
+                         % (sec, blob.replace("\\", "/")))
+            obj = os.path.join(BUILD, "assets", name + ".o")
+            run([AS] + ASFLAGS + ["-o", obj, wrap])
+            objs.append((vma, obj, sec))
+
+    # ---- resolve references into the raw `bin` regions ----
+    # Code references data that lives inside an .incbin blob, which carries no
+    # symbols.  Those names encode their own address (D_80091A00), so every
+    # reference that nothing defines can be satisfied mechanically.
+    # addresses span KUSEG data, scratchpad (0x1F80xxxx) and KSEG1 (0xA000xxxx)
+    sym_ref = re.compile(r"\b((?:D|func|jtbl|jpt|B)_([0-9A-F]{6,8}))\b")
+    defined, referenced = set(), {}
+    for fn in sorted(os.listdir(os.path.join(REPO, "asm"))):
+        if not fn.endswith(".s"):
+            continue
+        for line in open(os.path.join(REPO, "asm", fn)):
+            m = re.match(r"\s*(?:glabel|dlabel)\s+(\w+)", line)
+            if m:
+                defined.add(m.group(1))
+                continue
+            m = re.match(r"\s*(\w+):", line)
+            if m:
+                defined.add(m.group(1))
+            for name, addr in sym_ref.findall(line):
+                referenced[name] = int(addr, 16)
+
+    missing = {k: v for k, v in referenced.items() if k not in defined}
+    syms_ld = os.path.join(BUILD, "syms.ld")
+    with open(syms_ld, "w") as fp:
+        for name, addr in sorted(missing.items(), key=lambda kv: kv[1]):
+            fp.write("%s = 0x%08X;\n" % (name, addr))
+    print("resolved %d symbols into bin regions" % len(missing))
+
+    # ---- linker script: every region pinned to its exact address ----
+    ld_path = os.path.join(BUILD, "link.ld")
+    with open(ld_path, "w") as fp:
+        fp.write('INCLUDE "%s"\n' % syms_ld.replace("\\", "/"))
+        fp.write("SECTIONS\n{\n")
+        for vma, obj, sec in sorted(objs):
+            fp.write('    .s%08X 0x%08X : { "%s"(%s) }\n'
+                     % (vma, vma, obj.replace("\\", "/"), sec))
+        fp.write("    /DISCARD/ : { *(*) }\n}\n")
+
+    elf = os.path.join(BUILD, "main.elf")
+    run([LD, "-T", ld_path, "-o", elf, "--no-check-sections"])
+
+    built_payload = os.path.join(BUILD, "main.built.bin")
+    run([OBJCOPY, "-O", "binary", elf, built_payload])
+
+    header = open(os.path.join(BUILD, "exe_header.bin"), "rb").read()
+    payload = open(built_payload, "rb").read()
+
+    original = open(os.path.join(REPO, "disc", "SLUS_014.11"), "rb").read()
+    target_payload = original[0x800:]
+
+    # objcopy stops at the last section; pad to the declared t_size
+    if len(payload) < len(target_payload):
+        payload += b"\x00" * (len(target_payload) - len(payload))
+
+    out = os.path.join(BUILD, "SLUS_014.11")
+    open(out, "wb").write(header + payload)
+
+    built = header + payload
+    print("built   %d B  sha1 %s" % (len(built), hashlib.sha1(built).hexdigest()))
+    print("target  %d B  sha1 %s" % (len(original), hashlib.sha1(original).hexdigest()))
+
+    if built == original:
+        print("\n  OK  byte-identical to the original SLUS_014.11")
+        return 0
+
+    # report where it went wrong, grouped into runs, so regions can be demoted
+    diffs = [i for i in range(min(len(built), len(original)))
+             if built[i] != original[i]]
+    print("\n  MISMATCH  %d differing bytes of %d (%.4f%%)"
+          % (len(diffs), len(original), len(diffs) / len(original) * 100))
+    if len(built) != len(original):
+        print("  size differs by %d" % (len(built) - len(original)))
+
+    runs, s, p = [], None, None
+    for i in diffs:
+        if s is None:
+            s = p = i
+        elif i - p <= 64:
+            p = i
+        else:
+            runs.append((s, p))
+            s = p = i
+    if s is not None:
+        runs.append((s, p))
+
+    print("\n  first differing runs (file offsets):")
+    for a, b in runs[:25]:
+        print("    0x%06X .. 0x%06X  (%d B)  vram %08X"
+              % (a, b, b - a + 1, VRAM + a - 0x800))
+    if len(runs) > 25:
+        print("    ... and %d more runs" % (len(runs) - 25))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

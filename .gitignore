@@ -1,0 +1,20 @@
+# Everything derived from the disc image stays out of version control -- the
+# repo holds the tooling and the configuration that regenerates it.
+.venv/
+build/
+disc/
+iso/
+asm/
+assets/
+config/disc.xml
+undefined_syms_auto.txt
+undefined_funcs_auto.txt
+
+# vendored toolchain and third-party checkouts
+tools/bin/
+tools/maspsx/
+tools/asm-differ/
+tools/m2c/
+
+__pycache__/
+*.pyc

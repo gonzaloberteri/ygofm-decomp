@@ -1,0 +1,132 @@
+[
+  {
+    "start": 0,
+    "end": 10240,
+    "kind": "data"
+  },
+  {
+    "start": 10240,
+    "end": 535552,
+    "kind": "code"
+  },
+  {
+    "start": 535552,
+    "end": 570368,
+    "kind": "data"
+  },
+  {
+    "start": 570368,
+    "end": 1220608,
+    "kind": "zero"
+  },
+  {
+    "start": 1220608,
+    "end": 1221632,
+    "kind": "data"
+  },
+  {
+    "start": 1221632,
+    "end": 1224704,
+    "kind": "zero"
+  },
+  {
+    "start": 1224704,
+    "end": 1225728,
+    "kind": "data"
+  },
+  {
+    "start": 1225728,
+    "end": 1269760,
+    "kind": "zero"
+  },
+  {
+    "start": 1269760,
+    "end": 1270784,
+    "kind": "data"
+  },
+  {
+    "start": 1270784,
+    "end": 1409024,
+    "kind": "zero"
+  },
+  {
+    "start": 1409024,
+    "end": 1410048,
+    "kind": "data"
+  },
+  {
+    "start": 1410048,
+    "end": 1482752,
+    "kind": "zero"
+  },
+  {
+    "start": 1482752,
+    "end": 1483776,
+    "kind": "data"
+  },
+  {
+    "start": 1483776,
+    "end": 1486848,
+    "kind": "zero"
+  },
+  {
+    "start": 1486848,
+    "end": 1487872,
+    "kind": "data"
+  },
+  {
+    "start": 1487872,
+    "end": 1507328,
+    "kind": "zero"
+  },
+  {
+    "start": 1507328,
+    "end": 1508352,
+    "kind": "data"
+  },
+  {
+    "start": 1508352,
+    "end": 1687552,
+    "kind": "zero"
+  },
+  {
+    "start": 1687552,
+    "end": 1694720,
+    "kind": "data"
+  },
+  {
+    "start": 1694720,
+    "end": 1703936,
+    "kind": "zero"
+  },
+  {
+    "start": 1703936,
+    "end": 1768448,
+    "kind": "data"
+  },
+  {
+    "start": 1768448,
+    "end": 1769472,
+    "kind": "zero"
+  },
+  {
+    "start": 1769472,
+    "end": 1824768,
+    "kind": "data"
+  },
+  {
+    "start": 1824768,
+    "end": 1851392,
+    "kind": "zero"
+  },
+  {
+    "start": 1851392,
+    "end": 1872896,
+    "kind": "data"
+  },
+  {
+    "start": 1872896,
+    "end": 1900544,
+    "kind": "zero"
+  }
+]

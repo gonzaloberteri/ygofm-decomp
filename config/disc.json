@@ -1,0 +1,60 @@
+{
+  "source_bin": "C:\\Users\\PC\\Downloads\\Yu-Gi-Oh! Forbidden Memories (USA)\\Yu-Gi-Oh! Forbidden Memories (USA).bin",
+  "image_sectors": 220184,
+  "files": [
+    {
+      "path": "/DATA/MASTER.XA;1",
+      "lba": 199930,
+      "size": 5742592,
+      "sha1": "1e27c8f41f59657f5b5b799ee3291df713e7b9e2"
+    },
+    {
+      "path": "/DATA/MODEL.MRG;1",
+      "lba": 28534,
+      "size": 351019008,
+      "sha1": "9bbf42bb5e7ec7d444fd861d91b0b9760c7276a9"
+    },
+    {
+      "path": "/DATA/MOVIE.STR;1",
+      "lba": 202734,
+      "size": 35430400,
+      "sha1": "8c42a77173ac802784d4122cb0ab6d01985700e8"
+    },
+    {
+      "path": "/DATA/SD_BGM.DAT;1",
+      "lba": 2936,
+      "size": 14675968,
+      "sha1": "15113b884fc2f75c5cdd8b0d688c47a131822cae"
+    },
+    {
+      "path": "/DATA/SD_SE.DAT;1",
+      "lba": 2193,
+      "size": 1521664,
+      "sha1": "0c931ff91af3501060c802aa145417ccb92bf5fe"
+    },
+    {
+      "path": "/DATA/SU.MRG;1",
+      "lba": 954,
+      "size": 2537472,
+      "sha1": "2abc0dc77d2160a3e0b4c912be378be941f01647"
+    },
+    {
+      "path": "/DATA/WA_MRG.MRG;1",
+      "lba": 10102,
+      "size": 37748736,
+      "sha1": "4d85dfc2f2f872ab448de7d55788045ee37e60d4"
+    },
+    {
+      "path": "/SLUS_014.11;1",
+      "lba": 24,
+      "size": 1902592,
+      "sha1": "84747e64f6da8e764206ec203e489acf8c9dcf7d"
+    },
+    {
+      "path": "/SYSTEM.CNF;1",
+      "lba": 23,
+      "size": 68,
+      "sha1": "4cb5f5e98cb54748957245508a6fe1310441caeb"
+    }
+  ]
+}
