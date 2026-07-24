@@ -1,0 +1,779 @@
+[
+  {
+    "index": 13,
+    "addr": 2147560884,
+    "name": "func_80012DB4",
+    "score": 1,
+    "why": "data/bss -0x505"
+  },
+  {
+    "index": 16,
+    "addr": 2147561812,
+    "name": "func_80013154",
+    "score": 1,
+    "why": "data/bss -0x4EC64"
+  },
+  {
+    "index": 21,
+    "addr": 2147563236,
+    "name": "func_800136E4",
+    "score": 1,
+    "why": "data/bss -0x8A58"
+  },
+  {
+    "index": 22,
+    "addr": 2147563492,
+    "name": "func_800137E4",
+    "score": 1,
+    "why": "data/bss -0x4ECDC"
+  },
+  {
+    "index": 40,
+    "addr": 2147570136,
+    "name": "func_800151D8",
+    "score": 1,
+    "why": "data/bss -0x276F8"
+  },
+  {
+    "index": 65,
+    "addr": 2147573244,
+    "name": "func_80015DFC",
+    "score": 1,
+    "why": "data/bss -0x3058"
+  },
+  {
+    "index": 66,
+    "addr": 2147573492,
+    "name": "func_80015EF4",
+    "score": 1,
+    "why": "data/bss -0x58C5E"
+  },
+  {
+    "index": 71,
+    "addr": 2147577908,
+    "name": "func_80017034",
+    "score": 2,
+    "why": "data/bss -0x4EC58, gp -0x21"
+  },
+  {
+    "index": 78,
+    "addr": 2147579788,
+    "name": "func_8001778C",
+    "score": 1,
+    "why": "gp -0x5B"
+  },
+  {
+    "index": 80,
+    "addr": 2147580404,
+    "name": "func_800179F4",
+    "score": 3,
+    "why": "data/bss -0x8A8C, rodata -0x3800, gp -0x26"
+  },
+  {
+    "index": 89,
+    "addr": 2147587148,
+    "name": "func_8001944C",
+    "score": 1,
+    "why": "data/bss -0x277E2"
+  },
+  {
+    "index": 90,
+    "addr": 2147587428,
+    "name": "func_80019564",
+    "score": 1,
+    "why": "gp -0x32"
+  },
+  {
+    "index": 101,
+    "addr": 2147597640,
+    "name": "func_8001BD48",
+    "score": 1,
+    "why": "data/bss -0x86C"
+  },
+  {
+    "index": 103,
+    "addr": 2147603892,
+    "name": "func_8001D5B4",
+    "score": 1,
+    "why": "gp -0x50"
+  },
+  {
+    "index": 110,
+    "addr": 2147617160,
+    "name": "func_80020988",
+    "score": 2,
+    "why": "data/bss -0x4EB8F, rodata -0x25244"
+  },
+  {
+    "index": 113,
+    "addr": 2147620248,
+    "name": "func_80021598",
+    "score": 1,
+    "why": "gp -0x42"
+  },
+  {
+    "index": 115,
+    "addr": 2147621012,
+    "name": "func_80021894",
+    "score": 2,
+    "why": "data/bss -0x4EC96, rodata -0x29B4"
+  },
+  {
+    "index": 117,
+    "addr": 2147623668,
+    "name": "func_800222F4",
+    "score": 1,
+    "why": "gp -0x6A"
+  },
+  {
+    "index": 122,
+    "addr": 2147627332,
+    "name": "func_80023144",
+    "score": 1,
+    "why": "data/bss -0x5305E"
+  },
+  {
+    "index": 125,
+    "addr": 2147628480,
+    "name": "func_800235C0",
+    "score": 1,
+    "why": "gp -0x41"
+  },
+  {
+    "index": 126,
+    "addr": 2147630344,
+    "name": "func_80023D08",
+    "score": 1,
+    "why": "gp -0x32"
+  },
+  {
+    "index": 127,
+    "addr": 2147631036,
+    "name": "func_80023FBC",
+    "score": 1,
+    "why": "data/bss -0x538FC"
+  },
+  {
+    "index": 131,
+    "addr": 2147631616,
+    "name": "func_80024200",
+    "score": 1,
+    "why": "gp -0x68"
+  },
+  {
+    "index": 134,
+    "addr": 2147632544,
+    "name": "func_800245A0",
+    "score": 1,
+    "why": "data/bss -0x26D"
+  },
+  {
+    "index": 140,
+    "addr": 2147633632,
+    "name": "func_800249E0",
+    "score": 1,
+    "why": "rodata -0x9E2"
+  },
+  {
+    "index": 144,
+    "addr": 2147634724,
+    "name": "func_80024E24",
+    "score": 2,
+    "why": "data/bss -0x235, gp -0x34"
+  },
+  {
+    "index": 157,
+    "addr": 2147646968,
+    "name": "func_80027DF8",
+    "score": 1,
+    "why": "data/bss -0xE9C"
+  },
+  {
+    "index": 159,
+    "addr": 2147648232,
+    "name": "func_800282E8",
+    "score": 1,
+    "why": "data/bss -0x4ED84"
+  },
+  {
+    "index": 168,
+    "addr": 2147655344,
+    "name": "func_80029EB0",
+    "score": 1,
+    "why": "data/bss -0x4F0A0"
+  },
+  {
+    "index": 172,
+    "addr": 2147657312,
+    "name": "func_8002A660",
+    "score": 1,
+    "why": "data/bss -0x4F0A1"
+  },
+  {
+    "index": 176,
+    "addr": 2147658916,
+    "name": "func_8002ACA4",
+    "score": 1,
+    "why": "rodata -0x13C4"
+  },
+  {
+    "index": 180,
+    "addr": 2147663676,
+    "name": "func_8002BF3C",
+    "score": 1,
+    "why": "rodata -0x401C"
+  },
+  {
+    "index": 182,
+    "addr": 2147665116,
+    "name": "func_8002C4DC",
+    "score": 1,
+    "why": "rodata -0x4A26"
+  },
+  {
+    "index": 186,
+    "addr": 2147665412,
+    "name": "func_8002C604",
+    "score": 1,
+    "why": "data/bss -0xFF8"
+  },
+  {
+    "index": 189,
+    "addr": 2147665896,
+    "name": "func_8002C7E8",
+    "score": 1,
+    "why": "data/bss -0x28526"
+  },
+  {
+    "index": 192,
+    "addr": 2147667112,
+    "name": "func_8002CCA8",
+    "score": 1,
+    "why": "rodata -0x4244"
+  },
+  {
+    "index": 194,
+    "addr": 2147667340,
+    "name": "func_8002CD8C",
+    "score": 1,
+    "why": "data/bss -0x2756A"
+  },
+  {
+    "index": 197,
+    "addr": 2147671412,
+    "name": "func_8002DD74",
+    "score": 1,
+    "why": "data/bss -0x260"
+  },
+  {
+    "index": 204,
+    "addr": 2147673084,
+    "name": "func_8002E3FC",
+    "score": 1,
+    "why": "data/bss -0x4FCAD"
+  },
+  {
+    "index": 205,
+    "addr": 2147675740,
+    "name": "func_8002EE5C",
+    "score": 1,
+    "why": "rodata -0x688"
+  },
+  {
+    "index": 206,
+    "addr": 2147678804,
+    "name": "func_8002FA54",
+    "score": 1,
+    "why": "data/bss -0x234"
+  },
+  {
+    "index": 213,
+    "addr": 2147680848,
+    "name": "func_80030250",
+    "score": 1,
+    "why": "gp -0x26"
+  },
+  {
+    "index": 214,
+    "addr": 2147680916,
+    "name": "func_80030294",
+    "score": 1,
+    "why": "data/bss -0x4FDF3"
+  },
+  {
+    "index": 219,
+    "addr": 2147686276,
+    "name": "func_80031784",
+    "score": 1,
+    "why": "data/bss -0x4FF83"
+  },
+  {
+    "index": 226,
+    "addr": 2147688636,
+    "name": "func_800320BC",
+    "score": 2,
+    "why": "data/bss -0x220, rodata -0x13C4"
+  },
+  {
+    "index": 228,
+    "addr": 2147689328,
+    "name": "func_80032370",
+    "score": 1,
+    "why": "rodata -0x3A88"
+  },
+  {
+    "index": 231,
+    "addr": 2147691592,
+    "name": "func_80032C48",
+    "score": 1,
+    "why": "rodata -0xB4A"
+  },
+  {
+    "index": 244,
+    "addr": 2147703116,
+    "name": "func_8003594C",
+    "score": 1,
+    "why": "data/bss -0x6314C"
+  },
+  {
+    "index": 256,
+    "addr": 2147704308,
+    "name": "func_80035DF4",
+    "score": 1,
+    "why": "data/bss -0x28168"
+  },
+  {
+    "index": 262,
+    "addr": 2147708940,
+    "name": "func_8003700C",
+    "score": 1,
+    "why": "data/bss -0x4FEF4"
+  },
+  {
+    "index": 265,
+    "addr": 2147710196,
+    "name": "func_800374F4",
+    "score": 1,
+    "why": "data/bss -0x50018"
+  },
+  {
+    "index": 266,
+    "addr": 2147712116,
+    "name": "func_80037C74",
+    "score": 1,
+    "why": "rodata -0xF052"
+  },
+  {
+    "index": 271,
+    "addr": 2147718064,
+    "name": "func_800393B0",
+    "score": 1,
+    "why": "data/bss -0x4FC72"
+  },
+  {
+    "index": 277,
+    "addr": 2147719892,
+    "name": "func_80039AD4",
+    "score": 1,
+    "why": "gp -0x28"
+  },
+  {
+    "index": 279,
+    "addr": 2147720860,
+    "name": "func_80039E9C",
+    "score": 1,
+    "why": "data/bss -0x278"
+  },
+  {
+    "index": 283,
+    "addr": 2147721172,
+    "name": "func_80039FD4",
+    "score": 1,
+    "why": "data/bss -0x4FF0A"
+  },
+  {
+    "index": 285,
+    "addr": 2147721708,
+    "name": "func_8003A1EC",
+    "score": 1,
+    "why": "rodata -0x29C00"
+  },
+  {
+    "index": 293,
+    "addr": 2147727156,
+    "name": "func_8003B734",
+    "score": 2,
+    "why": "data/bss -0x50170, rodata -0x21004"
+  },
+  {
+    "index": 297,
+    "addr": 2147729080,
+    "name": "func_8003BEB8",
+    "score": 1,
+    "why": "rodata -0x2A000"
+  },
+  {
+    "index": 302,
+    "addr": 2147730792,
+    "name": "func_8003C568",
+    "score": 1,
+    "why": "data/bss -0x50200"
+  },
+  {
+    "index": 303,
+    "addr": 2147730984,
+    "name": "func_8003C628",
+    "score": 1,
+    "why": "rodata -0x26708"
+  },
+  {
+    "index": 307,
+    "addr": 2147732060,
+    "name": "func_8003CA5C",
+    "score": 1,
+    "why": "data/bss -0x2759C"
+  },
+  {
+    "index": 311,
+    "addr": 2147732696,
+    "name": "func_8003CCD8",
+    "score": 1,
+    "why": "data/bss -0x54590"
+  },
+  {
+    "index": 314,
+    "addr": 2147733108,
+    "name": "func_8003CE74",
+    "score": 1,
+    "why": "gp -0x43B"
+  },
+  {
+    "index": 319,
+    "addr": 2147733748,
+    "name": "func_8003D0F4",
+    "score": 1,
+    "why": "rodata -0x22DA6"
+  },
+  {
+    "index": 320,
+    "addr": 2147733876,
+    "name": "func_8003D174",
+    "score": 1,
+    "why": "gp -0x452"
+  },
+  {
+    "index": 323,
+    "addr": 2147734636,
+    "name": "func_8003D46C",
+    "score": 1,
+    "why": "data/bss -0x542A0"
+  },
+  {
+    "index": 326,
+    "addr": 2147739732,
+    "name": "func_8003E854",
+    "score": 1,
+    "why": "data/bss -0x2A43A"
+  },
+  {
+    "index": 332,
+    "addr": 2147743576,
+    "name": "func_8003F758",
+    "score": 2,
+    "why": "data/bss -0x25984, rodata -0x3C28"
+  },
+  {
+    "index": 334,
+    "addr": 2147743956,
+    "name": "func_8003F8D4",
+    "score": 1,
+    "why": "data/bss -0x252C"
+  },
+  {
+    "index": 336,
+    "addr": 2147745044,
+    "name": "func_8003FD14",
+    "score": 1,
+    "why": "rodata -0x5FA"
+  },
+  {
+    "index": 346,
+    "addr": 2147745900,
+    "name": "func_8004006C",
+    "score": 1,
+    "why": "data/bss -0x700"
+  },
+  {
+    "index": 347,
+    "addr": 2147745964,
+    "name": "func_800400AC",
+    "score": 2,
+    "why": "rodata -0x25406, gp -0x23D"
+  },
+  {
+    "index": 356,
+    "addr": 2147747088,
+    "name": "func_80040510",
+    "score": 1,
+    "why": "data/bss -0x3063"
+  },
+  {
+    "index": 359,
+    "addr": 2147751308,
+    "name": "func_8004158C",
+    "score": 1,
+    "why": "data/bss -0x54CF1"
+  },
+  {
+    "index": 367,
+    "addr": 2147756268,
+    "name": "func_800428EC",
+    "score": 1,
+    "why": "gp -0x4B0"
+  },
+  {
+    "index": 377,
+    "addr": 2147756864,
+    "name": "func_80042B40",
+    "score": 1,
+    "why": "data/bss -0xE3F8"
+  },
+  {
+    "index": 381,
+    "addr": 2147758640,
+    "name": "func_80043230",
+    "score": 1,
+    "why": "data/bss -0x54D42"
+  },
+  {
+    "index": 401,
+    "addr": 2147765460,
+    "name": "func_80044CD4",
+    "score": 1,
+    "why": "data/bss -0x576A0"
+  },
+  {
+    "index": 421,
+    "addr": 2147772264,
+    "name": "func_80046768",
+    "score": 1,
+    "why": "data/bss -0x354"
+  },
+  {
+    "index": 505,
+    "addr": 2147793852,
+    "name": "func_8004BBBC",
+    "score": 1,
+    "why": "data/bss -0x26C"
+  },
+  {
+    "index": 527,
+    "addr": 2147802660,
+    "name": "func_8004DE24",
+    "score": 1,
+    "why": "gp -0x4CE"
+  },
+  {
+    "index": 530,
+    "addr": 2147805952,
+    "name": "func_8004EB00",
+    "score": 2,
+    "why": "data/bss -0x2358, gp -0x4CA"
+  },
+  {
+    "index": 531,
+    "addr": 2147810860,
+    "name": "func_8004FE2C",
+    "score": 1,
+    "why": "data/bss -0x2C48D"
+  },
+  {
+    "index": 532,
+    "addr": 2147812740,
+    "name": "func_80050584",
+    "score": 1,
+    "why": "data/bss -0x2BD86"
+  },
+  {
+    "index": 534,
+    "addr": 2147815204,
+    "name": "func_80050F24",
+    "score": 1,
+    "why": "data/bss -0x70F"
+  },
+  {
+    "index": 536,
+    "addr": 2147816272,
+    "name": "func_80051350",
+    "score": 1,
+    "why": "gp -0x3C"
+  },
+  {
+    "index": 537,
+    "addr": 2147818056,
+    "name": "func_80051A48",
+    "score": 1,
+    "why": "data/bss -0x15E6"
+  },
+  {
+    "index": 539,
+    "addr": 2147821204,
+    "name": "func_80052694",
+    "score": 1,
+    "why": "data/bss -0x2BBB"
+  },
+  {
+    "index": 540,
+    "addr": 2147821740,
+    "name": "func_800528AC",
+    "score": 1,
+    "why": "gp -0x4DD"
+  },
+  {
+    "index": 543,
+    "addr": 2147824200,
+    "name": "func_80053248",
+    "score": 1,
+    "why": "data/bss -0x1594"
+  },
+  {
+    "index": 544,
+    "addr": 2147824600,
+    "name": "func_800533D8",
+    "score": 2,
+    "why": "data/bss -0x160C, gp -0x4EE"
+  },
+  {
+    "index": 545,
+    "addr": 2147824824,
+    "name": "func_800534B8",
+    "score": 1,
+    "why": "data/bss -0x578EC"
+  },
+  {
+    "index": 546,
+    "addr": 2147827892,
+    "name": "func_800540B4",
+    "score": 1,
+    "why": "gp -0x4C1"
+  },
+  {
+    "index": 548,
+    "addr": 2147834324,
+    "name": "func_800559D4",
+    "score": 2,
+    "why": "data/bss -0x57BFC, gp -0x2E"
+  },
+  {
+    "index": 551,
+    "addr": 2147837188,
+    "name": "func_80056504",
+    "score": 1,
+    "why": "data/bss -0x2BDA6"
+  },
+  {
+    "index": 556,
+    "addr": 2147844308,
+    "name": "func_800580D4",
+    "score": 1,
+    "why": "data/bss -0x2AB0"
+  },
+  {
+    "index": 559,
+    "addr": 2147846456,
+    "name": "func_80058938",
+    "score": 1,
+    "why": "data/bss -0x2B2E"
+  },
+  {
+    "index": 561,
+    "addr": 2147846988,
+    "name": "func_80058B4C",
+    "score": 1,
+    "why": "gp -0x4D4"
+  },
+  {
+    "index": 566,
+    "addr": 2147847952,
+    "name": "func_80058F10",
+    "score": 1,
+    "why": "data/bss -0x4754"
+  },
+  {
+    "index": 576,
+    "addr": 2147848836,
+    "name": "func_80059284",
+    "score": 1,
+    "why": "data/bss -0xAE30"
+  },
+  {
+    "index": 577,
+    "addr": 2147849504,
+    "name": "func_80059520",
+    "score": 1,
+    "why": "data/bss -0x6D8"
+  },
+  {
+    "index": 585,
+    "addr": 2147850976,
+    "name": "func_80059AE0",
+    "score": 1,
+    "why": "gp -0x4E9"
+  },
+  {
+    "index": 593,
+    "addr": 2147851736,
+    "name": "func_80059DD8",
+    "score": 1,
+    "why": "data/bss -0x2AB0"
+  },
+  {
+    "index": 601,
+    "addr": 2147853416,
+    "name": "func_8005A468",
+    "score": 1,
+    "why": "data/bss -0x1C40"
+  },
+  {
+    "index": 606,
+    "addr": 2147854456,
+    "name": "func_8005A878",
+    "score": 1,
+    "why": "data/bss -0x2BD0"
+  },
+  {
+    "index": 613,
+    "addr": 2147857952,
+    "name": "func_8005B620",
+    "score": 2,
+    "why": "data/bss -0x6314C, rodata -0x24A44"
+  },
+  {
+    "index": 619,
+    "addr": 2147861384,
+    "name": "func_8005C388",
+    "score": 1,
+    "why": "data/bss -0x6242"
+  },
+  {
+    "index": 657,
+    "addr": 2147879660,
+    "name": "func_80060AEC",
+    "score": 1,
+    "why": "data/bss -0x5A883"
+  },
+  {
+    "index": 669,
+    "addr": 2147944208,
+    "name": "func_80070710",
+    "score": 1,
+    "why": "data/bss -0x5A887"
+  },
+  {
+    "index": 674,
+    "addr": 2147944736,
+    "name": "func_80070920",
+    "score": 2,
+    "why": "data/bss -0xAD58, rodata -0x13C4"
+  }
+]

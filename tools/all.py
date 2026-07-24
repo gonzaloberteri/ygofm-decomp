@@ -17,6 +17,7 @@ STEPS = [
     ("split",             [PY, "-m", "splat", "split", "config/splat.yaml"]),
     ("build executable",  [PY, "tools/build.py"]),
     ("build disc image",  [PY, "tools/make_iso.py"]),
+    ("progress map",      [PY, "tools/progress_map.py"]),
 ]
 
 

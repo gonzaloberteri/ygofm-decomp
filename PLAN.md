@@ -434,3 +434,50 @@ Three problems this shook out, all of which would have been silent:
 
 The one-byte failure is the argument for the hash gate in miniature: no test
 short of byte equality would have noticed it.
+
+### 2026-07-24 — automated pass results, and a weak signal reported as weak
+
+`tools/autodecomp.py` over all 302 non-`$gp` candidates up to 80 instructions:
+
+| outcome | count | share |
+|---|---|---|
+| size-differs | 157 | 52% |
+| differs | 62 | 21% |
+| compile-failed | 47 | 16% |
+| **match** | **32** | **11%** |
+| m2c-failed | 4 | 1% |
+
+An 11% hit rate on untouched m2c output is roughly what this approach yields;
+the value is that it costs nothing and clears the trivial cases, not that it
+scales to the whole binary. `size-differs` dominating says most of these need
+real structure recovery (types, struct layouts, signedness) before the compiler
+will emit the same instruction count.
+
+**Progress, stated the honest way.** `tools/progress_map.py` renders
+`progress.png` and prints both metrics, because they disagree sharply:
+
+```
+game functions:    676 total    matched 32   (4.73%)
+game instructions: 99265 total  matched 340  (0.34%)
+```
+
+Function count flatters the work by more than 10x -- the automated pass matched
+the smallest functions in the binary, averaging 10 instructions each against a
+147-instruction mean. **Instructions matched is the metric to track.**
+
+### The TU detector is not good enough yet
+
+`tools/tu_detect.py` looks for translation-unit boundaries where the band of
+data a function references jumps backwards, tracking `.data`/`.bss`, `.rodata`
+and `$gp` offsets as separate bands (mixing them was useless -- a single
+function touches both a static at `0x8009xxxx` and a table at `0x801Bxxxx`).
+
+It proposes 111 boundaries, only 14 corroborated by more than one signal, with
+a median implied unit of 4 functions. Real translation units are far larger
+than that, so **this is a candidate generator for review, not an answer.** The
+underlying assumption -- that a function mostly touches its own unit's data --
+is weaker in this binary than hoped.
+
+Better signals to try next: per-function `.rodata` *ownership* (a table
+referenced by exactly one function is almost certainly in that function's unit),
+alignment padding between objects, and the `__FILE__` strings from `assert`.
