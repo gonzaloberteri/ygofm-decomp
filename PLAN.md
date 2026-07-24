@@ -401,3 +401,36 @@ the remaining work, rather than the refinement step it was originally listed
 as.** The revised order is M6 first, then the `$gp` half of M7.
 
 Reachable without touching `$gp`: 417 functions, 48,829 instructions, 49.2%.
+
+### 2026-07-24 — decompiled C is now part of the byte-identical build
+
+**32 functions build from C, and the whole binary still hashes to
+`84747e64f6da8e764206ec203e489acf8c9dcf7d`.** Until now the C was only compared
+against the original; it is now actually linked in, and the assembly it
+replaced is gone from the build.
+
+How it works: `tools/split_asm.py` carves the monolithic disassembly into the
+runs still made of assembly, leaving holes where C has taken over, and
+`tools/build.py` pins each C object and each assembly fragment at its exact
+original address. A C file must cover a *contiguous* span of the original --
+which is simply what a translation unit is. `src/globals.c` failed that test
+and was split in two; the check refuses to guess.
+
+Three problems this shook out, all of which would have been silent:
+
+* `endlabel`/`enddlabel` expand to `.size sym, . - sym`. Once split, a symbol's
+  start and its closing `.` can land in different files and the expression
+  stops being constant. Fragments now use a generated macro.inc with `.size`
+  removed -- it is metadata and never reaches the output bytes.
+* Standalone data labels sitting outside any function were dropped when
+  fragments were cut, because the fragment splitter only recognised the
+  instruction comment format. Data lines omit the raw word:
+  `/* 82B72 80092B72 */ .short 0xC000` versus
+  `/* 82B74 80092B74 00000000 */ .word 0x0`. That cost exactly one byte
+  (0x80092B73) and was caught only by the hash.
+* Undefined-symbol resolution has to scan the *fragments*, not the original
+  disassembly. Anything the split drops must be resolved like any other
+  reference into a bin region.
+
+The one-byte failure is the argument for the hash gate in miniature: no test
+short of byte equality would have noticed it.

@@ -15,6 +15,10 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import match
+import split_asm
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "tools", "bin", "bin")
 AS = os.path.join(BIN, "mipsel-none-elf-as.exe")
@@ -38,6 +42,56 @@ def run(cmd):
     return r
 
 
+def compile_sources():
+    """Compile every src/**/*.c and place each at its original address.
+
+    A C file must cover a contiguous span of the original binary -- that is what
+    a translation unit is.  Requiring it means each object's .text can be pinned
+    with a single linker rule, and a file that does not satisfy it is not a real
+    TU and should be split.
+    """
+    src_root = os.path.join(REPO, "src")
+    if not os.path.isdir(src_root):
+        return set(), []
+
+    inv = match.asm_inventory()
+    decompiled, objs = set(), []
+
+    for dirpath, _, files in os.walk(src_root):
+        for fn in sorted(files):
+            if not fn.endswith(".c"):
+                continue
+            src = os.path.join(dirpath, fn)
+            rel = os.path.relpath(src, REPO).replace("\\", "/")
+            obj = os.path.join(BUILD, "src", rel.replace("/", "_")[:-2] + ".o")
+            os.makedirs(os.path.dirname(obj), exist_ok=True)
+            run([sys.executable, os.path.join(REPO, "tools", "cc.py"), src, obj])
+
+            funcs = match.object_functions(obj)
+            known = {n: inv[n] for n in funcs if n in inv}
+            if not known:
+                print("  skip %s: defines nothing known to the disassembly" % rel)
+                continue
+
+            ordered = sorted(known.items(), key=lambda kv: kv[1][0])
+            start = ordered[0][1][0]
+            span = ordered[-1][1][0] + ordered[-1][1][1] - start
+            built = sum(len(funcs[n][0]) * 4 for n, _ in ordered)
+            if built != span:
+                print("  skip %s: functions are not contiguous in the original "
+                      "(%d bytes of C over a %d byte span) -- split this file"
+                      % (rel, built, span))
+                continue
+
+            objs.append((start, obj, ".text"))
+            decompiled.update(n for n, _ in ordered)
+
+    if decompiled:
+        print("compiled %d function(s) from C in %d file(s)"
+              % (len(decompiled), len(objs)))
+    return decompiled, objs
+
+
 def main():
     regions = json.load(open(os.path.join(REPO, "config", "regions.json")))
     os.makedirs(os.path.join(BUILD, "asm"), exist_ok=True)
@@ -45,16 +99,22 @@ def main():
 
     objs = []          # (vma, object path, section name)
 
+    # ---- C translation units take precedence over the disassembly ----
+    decompiled, c_objs = compile_sources()
+    objs += c_objs
+
+    # assemble only the stretches no C file has claimed
+    fragments = split_asm.split(decompiled)
+    for frag_vma, frag in fragments:
+        obj = os.path.join(BUILD, "asm", os.path.basename(frag)[:-2] + ".o")
+        # -I the fragment dir first so its stripped macro.inc wins
+        run([AS, "-I", split_asm.PARTS] + ASFLAGS + ["-o", obj, frag])
+        objs.append((frag_vma, obj, ".text"))
+
     for r in regions:
         name = "%s_%06X" % (r["kind"], r["start"])
         vma = VRAM + r["start"]
-
-        if r["kind"] == "code":
-            src = os.path.join(REPO, "asm", name + ".s")
-            obj = os.path.join(BUILD, "asm", name + ".o")
-            run([AS] + ASFLAGS + ["-o", obj, src])
-            objs.append((vma, obj, ".text"))
-        else:
+        if r["kind"] != "code":
             # wrap the raw bytes in a uniquely-named section so the linker
             # script can pin it without any chance of merging or reordering
             blob = os.path.join(REPO, "assets", name + ".bin")
@@ -73,11 +133,9 @@ def main():
     # reference that nothing defines can be satisfied mechanically.
     # addresses span KUSEG data, scratchpad (0x1F80xxxx) and KSEG1 (0xA000xxxx)
     sym_ref = re.compile(r"\b((?:D|func|jtbl|jpt|B)_([0-9A-F]{6,8}))\b")
-    defined, referenced = set(), {}
-    for fn in sorted(os.listdir(os.path.join(REPO, "asm"))):
-        if not fn.endswith(".s"):
-            continue
-        for line in open(os.path.join(REPO, "asm", fn)):
+    defined, referenced = set(decompiled), {}
+    for _, frag in fragments:
+        for line in open(frag):
             m = re.match(r"\s*(?:glabel|dlabel)\s+(\w+)", line)
             if m:
                 defined.add(m.group(1))
