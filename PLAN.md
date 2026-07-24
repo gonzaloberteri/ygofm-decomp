@@ -522,3 +522,29 @@ Two traps on the way:
 The practical consequence: **M6 is no longer a prerequisite for anything.** It
 stays useful for producing a readable source tree organised the way Konami's
 was, but it is no longer blocking matching. M8 is largely dissolved.
+
+### 2026-07-24 — function size distribution sets a hard ceiling on automation
+
+| size (instructions) | functions | instructions | share of code |
+|---|---|---|---|
+| 0-9 | 59 | 325 | 0.3% |
+| 10-24 | 153 | 2,606 | 2.6% |
+| 25-49 | 130 | 4,681 | 4.7% |
+| 50-99 | 130 | 8,772 | 8.8% |
+| 100-249 | 118 | 17,800 | 17.9% |
+| 250-499 | 49 | 17,167 | 17.3% |
+| **500+** | **37** | **47,914** | **48.3%** |
+
+**37 functions -- 5.5% of them -- hold 48.3% of the code.** The largest,
+`func_80061A84`, is 10,376 instructions on its own.
+
+The consequence for planning is blunt: `tools/autodecomp.py` works on functions
+of at most 80 instructions, which is 65.8% of all functions but only **14.1% of
+instructions**. Even a perfect automated pass caps there. Conversely the 86
+functions above 250 instructions carry 65.6% of the code.
+
+So the shape of the remaining work is not "grind through 600 small functions".
+It is **a few dozen very large functions**, each of which needs real structure
+recovery -- types, struct layouts, control flow -- and none of which m2c will
+hand over for free. That is worth knowing before mistaking a rising
+function-count percentage for progress.

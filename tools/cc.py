@@ -55,7 +55,7 @@ def run(cmd, **kw):
     return r
 
 
-def compile_c(src, obj, extra_flags=()):
+def compile_c(src, obj, extra_flags=(), as_g=None):
     tmp = obj + ".i"
     asm = obj + ".s"
     os.makedirs(os.path.dirname(obj) or ".", exist_ok=True)
@@ -68,6 +68,8 @@ def compile_c(src, obj, extra_flags=()):
     run(cpp_cmd)
 
     fl = flags_for(src)
+    if as_g is not None:
+        fl["as_G"] = as_g
     cc1_flags = CC1_BASE + [fl["opt"], "-G%d" % fl["cc1_G"]]
     run([CC1] + cc1_flags + list(extra_flags) + [tmp, "-o", asm])
 
@@ -93,8 +95,11 @@ def main():
     ap.add_argument("obj")
     ap.add_argument("--flags", default="",
                     help="extra CC1PSX flags, space separated")
+    ap.add_argument("--as-g", type=int, default=None,
+                    help="override the assembler's -G for this file")
     args = ap.parse_args()
-    out = compile_c(args.src, args.obj, args.flags.split() if args.flags else ())
+    out = compile_c(args.src, args.obj,
+                    args.flags.split() if args.flags else (), args.as_g)
     print("built %s" % out)
 
 

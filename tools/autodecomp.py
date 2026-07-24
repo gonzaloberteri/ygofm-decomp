@@ -10,7 +10,9 @@ a time.
     py -3 tools/autodecomp.py --all
 """
 import argparse
+import json
 import os
+import re
 import subprocess
 import sys
 
@@ -28,6 +30,34 @@ OUTDIR = os.path.join(REPO, "src", "auto")
 GAME_END = funcs_mod.GAME_END
 
 HEADER = '#include "types.h"\n#include "m2c_macros.h"\n\n'
+
+GP_BASE = 0x8009AF08
+# m2c does not know what $gp points at, so a small-data access comes out as
+# M2C_FIELD(saved_reg_gp, s8 *, 0x239) with saved_reg_gp left undeclared.  $gp is
+# a known constant, so each of those names a specific global: rewriting it into a
+# real extern at gp+offset both compiles and lets the assembler emit the GPREL16
+# relocation that reproduces the original offset.
+GP_FIELD = re.compile(
+    r"M2C_FIELD\(\s*saved_reg_gp\s*,\s*([A-Za-z_][A-Za-z0-9_ ]*?)\s*\*\s*,"
+    r"\s*(0x[0-9A-Fa-f]+|-?\d+)\s*\)")
+
+
+def rewrite_gp(body):
+    """Replace saved_reg_gp field accesses with declared externs."""
+    decls = {}
+
+    def sub(m):
+        ctype, off = m.group(1).strip(), int(m.group(2), 0)
+        name = "D_%08X" % (GP_BASE + off)
+        decls[name] = ctype
+        return name
+
+    new = GP_FIELD.sub(sub, body)
+    if "saved_reg_gp" in new:
+        return None, None          # a form we do not handle; skip this function
+    prologue = "".join("extern %s %s;\n" % (t, n)
+                       for n, t in sorted(decls.items()))
+    return new, prologue + ("\n" if prologue else "")
 
 
 def run_m2c(name):
@@ -54,31 +84,42 @@ def attempt(name, inv, tmpdir):
     if body is None:
         return "m2c-failed", None
 
-    open(src, "w").write(HEADER + body)
+    body, gp_decls = rewrite_gp(body)
+    if body is None:
+        return "gp-unhandled", None
 
-    r = subprocess.run([sys.executable, CC, src, obj],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        return "compile-failed", None
+    open(src, "w").write(HEADER + gp_decls + body)
 
-    try:
-        built = object_functions(obj)
-    except Exception:
-        return "objread-failed", None
-    if name not in built:
-        return "not-emitted", None
+    # The assembler's -G varies per translation unit in the original build, so
+    # try both rather than guessing; whichever reproduces the bytes is right.
+    best = "compile-failed"
+    for as_g in (0, 8):
+        r = subprocess.run([sys.executable, CC, src, obj, "--as-g", str(as_g)],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            continue
+        try:
+            built = object_functions(obj)
+        except Exception:
+            best = "objread-failed"
+            continue
+        if name not in built:
+            best = "not-emitted"
+            continue
 
-    words, masks = built[name]
-    vram, size = inv[name]
-    if size != len(words) * 4:
-        return "size-differs", None
+        words, masks = built[name]
+        vram, size = inv[name]
+        if size != len(words) * 4:
+            best = "size-differs"
+            continue
 
-    orig = original_words(vram, size)
-    mism = sum(1 for i in range(len(words))
-               if (words[i] & masks[i]) != (orig[i] & masks[i]))
-    if mism == 0:
-        return "match", open(src).read()
-    return "differs:%d/%d" % (mism, len(words)), None
+        orig = original_words(vram, size)
+        mism = sum(1 for i in range(len(words))
+                   if (words[i] & masks[i]) != (orig[i] & masks[i]))
+        if mism == 0:
+            return "match", (open(src).read(), as_g)
+        best = "differs:%d/%d" % (mism, len(words))
+    return best, None
 
 
 def main():
@@ -95,8 +136,7 @@ def main():
              if f["addr"] < GAME_END
              and f["name"] in inv
              and f["insns"] <= args.max_insns
-             and f["name"].startswith("func_")
-             and not f["gp"]]        # $gp needs the sdata layout first
+             and f["name"].startswith("func_")]
     cands.sort(key=lambda f: f["insns"])
     if not args.all:
         cands = cands[:args.limit]
@@ -107,14 +147,18 @@ def main():
 
     stats = {}
     matched = []
+    as_overrides = {}
     for i, f in enumerate(cands, 1):
         name = f["name"]
         status, text = attempt(name, inv, tmpdir)
         key = status.split(":")[0]
         stats[key] = stats.get(key, 0) + 1
         if status == "match":
-            open(os.path.join(OUTDIR, name + ".c"), "w").write(text)
+            body, as_g = text
+            open(os.path.join(OUTDIR, name + ".c"), "w").write(body)
             matched.append((name, f["insns"]))
+            if as_g != 0:
+                as_overrides["src/auto/%s.c" % name] = {"as_G": as_g}
         if i % 25 == 0 or i == len(cands):
             print("  %d/%d attempted, %d matched"
                   % (i, len(cands), len(matched)), flush=True)
@@ -126,6 +170,16 @@ def main():
     insns = sum(n for _, n in matched)
     print("\nmatched %d functions, %d instructions (%d bytes)"
           % (len(matched), insns, insns * 4))
+    # record the per-file assembler -G that the build needs
+    if as_overrides:
+        path = os.path.join(REPO, "config", "cflags.json")
+        cfg = json.load(open(path))
+        cfg.setdefault("files", {})
+        cfg["files"].update(as_overrides)
+        json.dump(cfg, open(path, "w"), indent=2)
+        print("recorded as_G overrides for %d file(s) in config/cflags.json"
+              % len(as_overrides))
+
     print("written to src/auto/")
     return 0
 

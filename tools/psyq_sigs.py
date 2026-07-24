@@ -12,12 +12,18 @@ tune and no false-positive class from "close enough" code.
 
     py -3 tools/psyq_sigs.py            report matches
     py -3 tools/psyq_sigs.py --write    also write config/symbol_addrs.txt
+    py -3 tools/psyq_sigs.py --libdir D compare a different SDK release
+
+`--libdir` accepts either ELF `.a` archives (Psy-Q 4.7, pre-converted) or
+Sony's native `.LIB`/`.OBJ` files (4.4 through 4.6), which `tools/psyq_lib.py`
+reads directly.  The default is unchanged.
 """
 import argparse
 import io
 import json
 import os
 import struct
+import sys
 from collections import defaultdict
 
 from elftools.elf.elffile import ELFFile
@@ -141,27 +147,29 @@ def signatures_from_object(blob, origin):
     return [(exports[0][0], origin, words, masks, exports)]
 
 
-def build_signatures():
+def build_signatures(libdir=None):
+    libdir = libdir or LIBDIR
     sigs = []
-    for fn in sorted(os.listdir(LIBDIR)):
-        if not fn.endswith(".a"):
-            continue
-        for member, blob in read_archive(os.path.join(LIBDIR, fn)):
-            sigs += signatures_from_object(blob, "%s(%s)" % (fn, member))
+    for fn in sorted(os.listdir(libdir)):
+        if fn.endswith(".a"):
+            for member, blob in read_archive(os.path.join(libdir, fn)):
+                sigs += signatures_from_object(blob, "%s(%s)" % (fn, member))
+        elif fn.upper().endswith((".LIB", ".OBJ")):
+            # Sony's native linker format -- same tuple shape out.
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import psyq_lib
+            for member, blob in psyq_lib.iter_members(os.path.join(libdir, fn)):
+                sigs += psyq_lib.signatures_from_object(
+                    blob, "%s(%s)" % (fn.lower(), member), MIN_INSNS)
     return sigs
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--write", action="store_true")
-    args = ap.parse_args()
+def match_signatures(sigs, regions, payload):
+    """-> (matches, ambiguous, ambiguous_exports) for the code regions.
 
-    sigs = build_signatures()
-    print("built %d signatures from %s" % (len(sigs), os.path.basename(LIBDIR)))
-
-    regions = json.load(open(os.path.join(REPO, "config", "regions.json")))
-    payload = open(os.path.join(REPO, "disc", "SLUS_014.11"), "rb").read()[0x800:]
-
+    matches      addr -> (name, origin, size, exports)
+    ambiguous    addr -> {origin, ...} where more than one object matched
+    """
     # Index by the value of the first unmasked word, so each target word does a
     # single dict lookup instead of a sweep over every signature.
     index = defaultdict(list)
@@ -203,6 +211,25 @@ def main():
                         matches[addr] = cand
                     ambiguous_exports.setdefault(addr, []).append(exports)
                     ambiguous_exports[addr].append(prev[3])
+
+    return matches, ambiguous, ambiguous_exports
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--write", action="store_true")
+    ap.add_argument("--libdir", default=None,
+                    help="SDK library directory (ELF .a or native .LIB/.OBJ)")
+    args = ap.parse_args()
+
+    libdir = args.libdir or LIBDIR
+    sigs = build_signatures(libdir)
+    print("built %d signatures from %s" % (len(sigs), os.path.basename(libdir)))
+
+    regions = json.load(open(os.path.join(REPO, "config", "regions.json")))
+    payload = open(os.path.join(REPO, "disc", "SLUS_014.11"), "rb").read()[0x800:]
+
+    matches, ambiguous, ambiguous_exports = match_signatures(sigs, regions, payload)
 
     total = sum(m[2] for m in matches.values())
     code_bytes = sum(r["end"] - r["start"] for r in regions if r["kind"] == "code")
