@@ -364,3 +364,40 @@ tools/match.py src/foo.c        compile and compare, per function
 tools/flagsweep.py src/foo.c    when it does not match, search the flag space
 tools/build.py                  whole-binary SHA-1 gate, must stay green
 ```
+
+### 2026-07-24 — M7 scaling, and the $gp constraint
+
+`tools/autodecomp.py` runs the whole loop unattended: m2c `--valid-syntax`
+emits compilable C, which is compiled and compared per function, and anything
+that byte-matches is kept in `src/auto/`.
+
+The first run surfaced a structural problem worth stating plainly.
+
+**`$gp = 0x8009AF08`**, set by the startup code at `0x80012A54`:
+
+```
+80012A54  3C1C800A   lui   $gp, 0x800A
+80012A58  279CAF08   addiu $gp, $gp, -0x50F8
+```
+
+(The other 22 `$gp`-defining instructions the scan found are all inside data
+regions -- data misread as instructions, not real code.)
+
+**50.8% of game code addresses through `$gp`** (259 of 676 functions, 50,436 of
+99,265 instructions). Those functions cannot be matched yet, and the reason is
+not a missing tool:
+
+* `-G8` puts objects of 8 bytes or less in the small-data area, addressed as
+  `offset($gp)` rather than `%hi/%lo`.
+* GCC only does this for variables it can see the *definition* of. An `extern`
+  declaration always gets `%hi/%lo` -- which is exactly why `src/globals.c`
+  matched: its global genuinely is addressed that way in the original.
+* So matching a `$gp` function means defining its globals in the same
+  translation unit, in the original order, so `.sdata`/`.sbss` land at the same
+  offsets. That is a whole-program constraint, not a per-function one.
+
+**This makes M6 (translation-unit segmentation) a hard prerequisite for half of
+the remaining work, rather than the refinement step it was originally listed
+as.** The revised order is M6 first, then the `$gp` half of M7.
+
+Reachable without touching `$gp`: 417 functions, 48,829 instructions, 49.2%.

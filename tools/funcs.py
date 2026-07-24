@@ -13,6 +13,7 @@ import re
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASM = os.path.join(REPO, "asm")
 GAME_END = 0x80073704          # first Psy-Q symbol; game code lies below
+GP_BASE  = 0x8009AF08          # set at 0x80012A54: lui $gp,0x800A / addiu $gp,$gp,-0x50F8
 
 LABEL = re.compile(r"^(?:glabel|dlabel)\s+(\S+)")
 INSN = re.compile(r"^\s+/\* [0-9A-F]+ ([0-9A-F]{8}) [0-9A-F]{8} \*/\s+(\S+)")
@@ -28,7 +29,7 @@ def parse():
             m = LABEL.match(line)
             if m:
                 cur = {"name": m.group(1), "addr": None, "insns": 0,
-                       "calls": 0, "file": fn, "ops": set()}
+                       "calls": 0, "file": fn, "ops": set(), "gp": False}
                 funcs.append(cur)
                 continue
             m = INSN.match(line)
@@ -36,6 +37,8 @@ def parse():
                 if cur["addr"] is None:
                     cur["addr"] = int(m.group(1), 16)
                 cur["insns"] += 1
+                if "$gp" in line:
+                    cur["gp"] = True
                 op = m.group(2)
                 cur["ops"].add(op)
                 if op in ("jal", "jalr"):
@@ -59,6 +62,17 @@ def main():
 
     leaves = [f for f in game if f["calls"] == 0]
     print("game leaf functions (no jal/jalr): %d" % len(leaves))
+
+    # $gp-relative access needs the small-data layout reconstructed before it
+    # can be matched, so these are blocked until translation units are split.
+    gp = [f for f in game if f["gp"]]
+    gp_ins = sum(f["insns"] for f in gp)
+    all_ins = sum(f["insns"] for f in game)
+    print("game functions using $gp: %d (%d insns, %.1f%% of game code)"
+          % (len(gp), gp_ins, gp_ins / all_ins * 100))
+    print("reachable without $gp:    %d (%d insns, %.1f%%)"
+          % (len(game) - len(gp), all_ins - gp_ins,
+             (all_ins - gp_ins) / all_ins * 100))
 
     if args.candidates:
         # small leaves with no multiply/divide and no coprocessor ops are the
