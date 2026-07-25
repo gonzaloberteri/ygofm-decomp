@@ -1376,3 +1376,42 @@ The others were the `expand_div` "verification" that counted cc1's own guard, th
 `; echo "PUSHED"` after a broken `&&` chain, and a permuter "plateau" that was an
 instant crash. The common fix is to check the premise — did this execute at all —
 before believing a negative result.
+
+#### Measured: breakpoints work but do not scale; sampling is fast but aliased
+
+**Breakpoints, 1206 of them, under `-interpreter -debugger`:** 45 minutes reached
+frame 400, with the log showing `boot address : 800129d8 / Execute !` — the game
+was only just starting, so 0 hits was *correct*. A 2-breakpoint probe reached
+frame 900 comfortably. The cost scales with breakpoint count; it is not a hang.
+
+**PC sampling under the dynarec (`tools/sample.lua`):** 3600 frames in under 7
+minutes, no breakpoints. 3248 samples in game code, 352 outside.
+
+But sampling once per Vsync **aliases against a 60 Hz game loop**, so it keeps
+catching the same wait: only **13 distinct functions**, and `func_800736C4` took
+3043 of 3248 samples. Treat the output as a ranking of hot code, not as coverage
+— a function absent from the samples has not been shown to be unused.
+
+What the ranking does say, and it is worth something:
+
+| function | samples | insns | decompiled |
+|---|---|---|---|
+| `func_800736C4` | 3043 | 16 | **yes** |
+| `func_8005BFC8` | 159 | 139 | no |
+| `func_80043960` | 20 | 155 | no |
+
+The hottest function in the game is already matched, which is mild validation
+that earlier work touched relevant code. `func_8005BFC8` and `func_80043960` are
+the first evidence-backed targets this project has had — chosen because they run,
+not because of their size or address.
+
+**Where this leaves M10.** Three options, none free:
+1. **Batched breakpoints** — 13 passes of ~100, deterministic, gives true boot
+   coverage. Costs hours of unattended compute.
+2. **Better sampling** — needs a trigger that is not 60 Hz; Vsync is the only
+   frequent event exposed to Lua, so this may not be reachable.
+3. **Static call-graph reachability** from the entry point — no emulator, cheap,
+   answers reachability rather than execution.
+
+Duel-path coverage additionally needs a Redux save state, since DuckStation's
+format is not portable.
