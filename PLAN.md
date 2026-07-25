@@ -794,3 +794,59 @@ function count** everywhere it happens.
 The residual misses are almost all register allocation or scheduling: correct
 instruction count, one register pair swapped or one instruction in a different
 delay slot.
+
+#### Batches 0, 2, 4, 5 — 51 functions matched, and what they proved
+
+| batch | matched / total | instructions |
+|---|---|---|
+| 0 | 14 / 44 | 211 |
+| 2 | 16 / 43 | 231 |
+| 4 | 10 / 43 | 148 |
+| 5 | 11 / 43 | ~171 |
+
+**`-O2` won nearly every case, not `-O3`.** The earlier claim that the build used
+`-O3` throughout was based on two tiny functions and does not hold: `-O2` and
+`-O1` dominate, and `func_800136D4` needs **no `-O` at all** (`addiu $sp,-16` /
+`addiu $sp,+16` / `jr $ra` / `nop`, which only `-O0` produces).
+
+**Three independent batches converged on `-fno-schedule-insns2`.** No `-O` level
+reproduces some functions: `-O1` gives the original's epilogue order but the
+wrong prologue, `-O2` the reverse. The difference is the post-reload scheduler
+hoisting `lw $ra` above trailing stores. Batch 5 verified two functions reach
+MATCH with `-O2` plus that flag. It is now expressible as `cc1_extra=`, so those
+are reclaimable.
+
+**`cc1_G` is a third real knob, independent of `as_G`.** With `cc1_G=0` GCC emits
+its own `lui/%lo` pair; with `cc1_G=8` it emits the `lw $r,sym` assembler macro,
+and the two allocate registers differently. A binary-wide scan found 837
+different-register `%hi`/`%lo` pairs, 46 of them loads with a non-`$at` base,
+clustered in 29 functions -- all `cc1_G=0` candidates. Corollary worth
+remembering: **cc1 never allocates `$at`, so `$at` in the original proves an
+assembler macro rather than compiler output.**
+
+**The `-G` threshold is a property of your declaration, not the real object.**
+cc1 emits `.extern sym, size` and gas honours it, so declaring a symbol as an
+array or oversized struct keeps it out of small data. That is how a function that
+mixes `offset($gp)` and `%hi/%lo` for same-sized globals becomes expressible --
+otherwise it is a dead end for any single `as_G`.
+
+**`volatile` is required for the `$gp` state words.** `x &= 0x3FFC; x |= 2;` on
+`gp+0x20A` reloads between the two operations in the original; without
+`volatile` GCC merges them and the function is three instructions short. These
+look like pad/hardware state.
+
+**One recurring near-miss with a single cause:** the 6-argument stack-push idiom.
+The original emits `li $v0,argN; sw $v0,0x10($sp)` reusing `$v0`; this cc1
+materialises both constants first into `$v0`/`$v1`. That is the *only* remaining
+difference in four functions, and is very likely the same scheduler flag.
+
+**A verification gap worth naming:** `match.py` compares only `.text`. A function
+that dispatches through a jump table would report MATCH while its jump table
+landed at the wrong address. Whole-binary SHA-1 still catches it, but the
+per-function check alone would not.
+
+Data structures recovered across batches (a shared header once TU segmentation
+lands): `D_8009B45C` (gp+0x554) main game state, `D_8009B458` (gp+0x550) sound
+driver work area with 16 x 24-byte channel records and a `SpuVoiceAttr`,
+`D_800F2C40[]` 0xE20-byte per-duelist records, `D_800E9EC8` pad block,
+`D_801A7AD8[]` 28-byte card records with bit 15 of `+0x16` as occupied.
