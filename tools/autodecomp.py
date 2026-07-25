@@ -218,7 +218,8 @@ def attempt(name, inv, tmpdir):
     # almost certainly the optimisation level too.  Search rather than guess;
     # whichever combination reproduces the bytes is the right one.
     best = "compile-failed"
-    for opt, as_g in [(o, g) for o in ("-O2", "-O3", "-O1") for g in (0, 8)]:
+    for opt, as_g in [(o, g) for o in ("-O2", "-O3", "-O1", "-Os")
+                      for g in (0, 8)]:
         # "--flags=-O2" as one argv entry, not two: argparse treats a separate
         # "-O2" as an option token and refuses it as a value.  A multi-word
         # value happens to slip through, which is why this only broke here.

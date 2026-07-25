@@ -17,7 +17,9 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
 
-OPT = ["-O0", "-O1", "-O2", "-O3"]
+# -Os is not decoration: one function matched only at -Os, and it got two
+# others closer than any other level. It was missing from the first sweep.
+OPT = ["-O0", "-O1", "-O2", "-O3", "-Os"]
 TOGGLES = [
     [],
     ["-fno-builtin"],

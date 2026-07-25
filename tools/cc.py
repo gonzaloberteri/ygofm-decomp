@@ -117,6 +117,10 @@ def compile_c(src, obj, extra_flags=(), as_g=None):
     # scheduler hoisting `lw $ra` above trailing stores.  That is reachable only
     # by naming the pass, e.g. cc1_extra=-fno-schedule-insns2.
     cc1_flags += list(fl.get("cc1_extra", []))
+    # cc1 emits its own /0 guard; ASPSX's macro carries both that and the
+    # INT_MIN/-1 check, so cc1's has to be suppressed or the two stack up.
+    if fl.get("expand_div"):
+        cc1_flags.append("-mno-check-zero-division")
     run([CC1] + cc1_flags + list(extra_flags) + [tmp, "-o", asm])
 
     maspsx_flags = ["--aspsx-version", ASPSX_VERSION, "--run-assembler",

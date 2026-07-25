@@ -160,10 +160,22 @@
     "src/auto/func_80043E30.c": {
       "opt": "-O2"
     },
+    "src/auto/func_80046990.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
     "src/auto/func_80046F58.c": {
       "opt": "-O2"
     },
+    "src/auto/func_8004703C.c": {
+      "as_G": 8,
+      "opt": "-O1"
+    },
     "src/auto/func_80047278.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80047314.c": {
+      "as_G": 8,
       "opt": "-O2"
     },
     "src/auto/func_800473CC.c": {

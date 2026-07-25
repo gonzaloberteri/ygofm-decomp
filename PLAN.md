@@ -1097,3 +1097,63 @@ new. Verified on two spans:
 **435 further game-region functions** are hidden this way, beyond the 320 already
 applied. Applying them is pending: re-splitting the disassembly while
 hand-decompilation workers are mid-task would change the spans under them.
+
+### 2026-07-25 — wave 2 batch 3: 17 functions, and a feature of mine that never worked
+
+17 matched / 298 instructions.
+
+**`-Os` is a real optimisation level and was missing from every sweep.** One
+function matched *only* at `-Os`, and it brought two others closer than any other
+level did. Now in `flagsweep.py` and `autodecomp.py`.
+
+#### Correction: `expand_div` was a no-op, and my verification of it was bad
+
+I added an `expand_div` flag to reproduce ASPSX's division macro and reported it
+working. **It did nothing.** Proven by comparing `.text` with and without it:
+byte-identical.
+
+The verification was the real failure. I compiled one file, saw a `break` in the
+output, and concluded the macro was being emitted — but that `break` is **cc1's
+own** zero-division guard, present either way. I checked a symptom that could not
+distinguish the hypothesis, and never ran the control.
+
+Two separate gates, both found by a worker and confirmed here:
+
+1. `div_needs_expanding()` returns False for a `$zero` destination, and GCC
+   2.95.2 always prints `div $0,%1,%2` — the destination field is unused because
+   MIPS `div` writes hi/lo. So the check rejected every division this compiler
+   produces. Now gated on the flag instead.
+2. The `div`/`rem` handler *also* returns early for a `$zero` destination, before
+   reaching the expansion block, and the expansion assumes the destination
+   register appears in the `div` line — whereas GCC emits a separate `mfhi`
+   afterwards.
+
+`-mno-check-zero-division` now correctly suppresses cc1's own guard, so half of
+it is right. **The macro is still not emitted, so `expand_div` remains
+non-functional** and any function containing `/` or `%` is still unmatchable.
+Fixing it properly means teaching maspsx the split `div`/`mfhi` form, which is a
+design change in that tool, not a one-liner. Recorded as open rather than fixed.
+
+#### Other findings
+
+* **Nested `if`s defeat `fold_truthop`.** `(f & 0x8000) && !(f & 0x4000)` folds to
+  `andi 0xC000; xori 0x8000; sltiu`; nesting the tests reproduces the original's
+  two-branch form. Same for `r == 0 || r == -1`, which folds to `addiu 1; sltiu 2`.
+* **New `cc1_G=0` trigger:** a `%hi/%lo` pair *split across basic blocks* — the
+  original hoists `lui %hi` into two different branch delay slots. The `cc1_G=8`
+  `$at` macro cannot be split. (Not merely "two different registers".)
+* Accumulate into the existing variable (`c += g[1]`) rather than a fresh one, or
+  GCC allocates another register.
+* Cache a pointer loaded out of a struct in a local, or GCC reloads it after any
+  intervening store.
+* The **register-copy-of-a-constant** pattern (`li $a1,0; move $a2,$a1`) is now
+  the single largest 1–2 instruction blocker, hit in six functions, immune to
+  ~20 flags and to shared locals. Same phenomenon as the "6-argument stack-push"
+  note above. This needs decomp-permuter or reading cc1's source, not more
+  flag guessing.
+
+**A bytecode VM occupies `0x800709xx`–`0x800714xx`**: `D_800F5B98[]` is an `s32`
+register file, `D_800F5BE8` its state (u8 stack pointer at `+0x14`, `s32` stack at
+`+0x18`), and every `func_800709xx`/`func_8007
+13xx`/`func_800714xx` is one opcode.
+Worth decompiling as a single translation unit rather than piecemeal.
