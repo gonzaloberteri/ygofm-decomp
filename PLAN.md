@@ -1226,3 +1226,51 @@ iterating to a fixed point:
 
 `tools/verify_src.py` is what caught both bugs — it names the failing file, where
 the whole-binary hash only says something is wrong somewhere in 1.9 MB.
+
+### 2026-07-25 — three tools added; decomp-permuter working on Windows
+
+Installed to attack the named blockers rather than to have more tools:
+
+| tool | what it is for |
+|---|---|
+| **decomp-permuter** | the register-allocation wall — randomly rewrites C and scores each variant against the target object, which is the search no compiler flag can express |
+| **PCSX-Redux** (44.8 MB) | runtime observability: Lua API and GDB stub for execution tracing and real frame comparison. DuckStation has neither |
+| **GCC 2.95.2 source** | `local-alloc.c`, `sched.c`, `regclass.c`, `reload1.c`, `mips.md` — to explain *why* sched2 changes allocation |
+
+A bonus in the Redux archive: **`psyq-obj-parser.exe`**, the exact tool an earlier
+worker had to hand-write a replacement for in order to read native Psy-Q `.LIB`
+files.
+
+`tools/permute.py` scaffolds a permuter directory per function: `target.o` is the
+original bytes, obtained by assembling that one function's disassembly with the
+same path `build.py` uses, so nothing is approximated. `base.c` comes from
+`src/manual`, `src/auto`, `build/rejected` or a fresh m2c draft, preprocessed
+because the permuter parses C itself. Flags are baked into `compile.sh`, since
+preprocessing strips the `decomp-flags` comment that `cc.py` would otherwise read.
+
+#### Four Windows assumptions in the permuter, all patched in our fork
+
+1. It required the POSIX owner-execute bit on `compile.sh`; Windows cannot
+   represent it, so every scaffold was rejected. Skipped where unsatisfiable.
+2. It looks for `mips-linux-gnu-objdump`; ours is `mipsel-none-elf-objdump`, the
+   same binutils build — aliased.
+3. It shells out to bare `cpp` — aliased to `mipsel-none-elf-cpp.exe`.
+4. It `exec`s `compile.sh` directly, which Windows refuses (WinError 193). Now
+   routed through bash for `.sh` on `nt`.
+
+#### The permuter corroborates the diagnosis independently
+
+On `func_80044278`, its own penalty breakdown is:
+
+```
+Stack Differences:      0
+Branch Differences:     0
+Register Differences:   8      <- the entire score
+Reorderings:            0
+Insertions/Deletions:   0
+base score = 40
+```
+
+Nothing structural, nothing reordered — purely register allocation. That is a
+second, independent confirmation of what four workers reported by hand, from a
+tool with no knowledge of their conclusions.

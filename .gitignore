@@ -19,3 +19,10 @@ tools/bin/
 __pycache__/
 *.pyc
 mkpsxiso.cue
+
+# Reference material and large third-party checkouts: downloadable, not ours to
+# redistribute, and a 12.9 MB tarball has no business in git history.
+tools/ref/
+tools/bin/redux/
+debug_source.c
+debug_compiled_object.o
