@@ -1716,3 +1716,40 @@ ranking); **decomp-permuter was scaffolded but never actually run** on more than
 one function, and was misconfigured when it was; **the GCC source had never been
 opened**, and reading 80 lines of it answered a question that thirty compiler
 flags and 45,000 permuter iterations had not.
+
+#### The permuter, measured properly: it plateaus at 10 and some of its wins are invalid
+
+With the flags fixed, `func_8005F1B8` ran **767,182 iterations on 14 cores**:
+base score 15, best 10, then flat. The earlier run on `func_80044278` went
+40 → 10 and also stopped there. **Two independent functions plateau at exactly
+10**, which on the permuter's scale is two register differences — the same wall,
+not a coincidence of one function.
+
+Four variants scored 10, and **two of them are semantically wrong.** The best,
+`output-10-1`, moved `arg1 += t * v / span` *inside* the `if (t > 0)` block,
+which changes what the function computes when `t` is negative. The permuter
+optimises the byte score and has no notion of meaning, so its output cannot be
+committed without reading it. This is the third time this project has had to
+decline a byte-score improvement on semantic grounds.
+
+The two valid variants hoist the product into a temporary:
+
+```c
+scaled = t * v;
+arg1 += scaled / span;
+```
+
+which is a real and reusable idiom — but on this function it does not move
+`match.py`'s count. Note the disagreement: the permuter scores that change
+15 → 10 while `match.py` reports **3 differing instructions either way**. The two
+scales measure different things (the permuter counts reorderings and stack slots
+too), so *permuter progress is not evidence of a closer match.* Check with
+`match.py`.
+
+`func_8005F1B8` is now parked in `build/rejected/`, together with the best valid
+permuter variant as `func_8005F1B8.permuter-best.c`. Everything has been tried
+on it: all three allocation modes (`-O2`, `-Os`, `-fno-schedule-insns2`), `-O1`
+and `-O3`, five hand-written source forms, and the permuter. All of them stop at
+the same three instructions, and all three are the same choice of `$v0` where the
+original uses `$v1` for the product feeding the division. That is the residual
+wall, stated as precisely as it can be.
