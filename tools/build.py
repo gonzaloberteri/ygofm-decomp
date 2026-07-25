@@ -8,6 +8,7 @@ louder and earlier failure than a hash mismatch at the end.
 
 Exit code 0 only when the rebuilt file is byte-identical to the original.
 """
+import concurrent.futures as cf
 import hashlib
 import io
 import json
@@ -73,13 +74,24 @@ def compile_sources():
                 sources.append(os.path.join(dirpath, fn))
     sources.sort(key=lambda p: ("auto" in p.replace("\\", "/").split("/"), p))
 
+    # Compile in parallel -- each file is an independent subprocess chain -- then
+    # apply the claim and contiguity checks sequentially in `sources` order, so
+    # hand-written files still win over generated ones deterministically.
+    def obj_for(src):
+        rel = os.path.relpath(src, REPO).replace("\\", "/")
+        return os.path.join(BUILD, "src", rel.replace("/", "_")[:-2] + ".o")
+
+    os.makedirs(os.path.join(BUILD, "src"), exist_ok=True)
+    with cf.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        list(pool.map(
+            lambda s: run([sys.executable, os.path.join(REPO, "tools", "cc.py"),
+                           s, obj_for(s)]),
+            sources))
+
     for src in sources:
         if True:
             rel = os.path.relpath(src, REPO).replace("\\", "/")
-            obj = os.path.join(BUILD, "src", rel.replace("/", "_")[:-2] + ".o")
-            os.makedirs(os.path.dirname(obj), exist_ok=True)
-            run([sys.executable, os.path.join(REPO, "tools", "cc.py"), src, obj])
-
+            obj = obj_for(src)
             funcs = match.object_functions(obj)
             known = {n: inv[n] for n in funcs if n in inv}
             if not known:
@@ -120,11 +132,16 @@ def main():
 
     # assemble only the stretches no C file has claimed
     fragments = split_asm.split(decompiled)
-    for frag_vma, frag in fragments:
+
+    def assemble(item):
+        frag_vma, frag = item
         obj = os.path.join(BUILD, "asm", os.path.basename(frag)[:-2] + ".o")
         # -I the fragment dir first so its stripped macro.inc wins
         run([AS, "-I", split_asm.PARTS] + ASFLAGS + ["-o", obj, frag])
-        objs.append((frag_vma, obj, ".text"))
+        return (frag_vma, obj, ".text")
+
+    with cf.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        objs += list(pool.map(assemble, fragments))
 
     for r in regions:
         name = "%s_%06X" % (r["kind"], r["start"])

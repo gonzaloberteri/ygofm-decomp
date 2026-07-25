@@ -10,12 +10,14 @@ a time.
     py -3 tools/autodecomp.py --all
 """
 import argparse
+import concurrent.futures as cf
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "tools"))
@@ -134,6 +136,8 @@ def main():
     ap.add_argument("--limit", type=int, default=50)
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--max-insns", type=int, default=60)
+    ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4,
+                    help="parallel workers; the work is subprocess-bound")
     args = ap.parse_args()
 
     all_funcs = funcs_mod.parse()
@@ -159,28 +163,46 @@ def main():
     tmpdir = os.path.join(REPO, "build", "auto")
     os.makedirs(tmpdir, exist_ok=True)
 
+    # Each function is independent -- one m2c run and up to six compile attempts,
+    # all of it subprocess-bound -- so a thread pool scales nearly linearly and
+    # the GIL is irrelevant.  Results are keyed by name and consumed in candidate
+    # order afterwards, so output stays deterministic regardless of finish order.
+    results = {}
+    done = [0]
+    lock = threading.Lock()
+
+    def work(f):
+        out = attempt(f["name"], inv, tmpdir)
+        with lock:
+            results[f["name"]] = out
+            done[0] += 1
+            if done[0] % 50 == 0 or done[0] == len(cands):
+                hits = sum(1 for v in results.values() if v[0] == "match")
+                print("  %d/%d attempted, %d matched"
+                      % (done[0], len(cands), hits), flush=True)
+
+    with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        list(pool.map(work, cands))
+
     stats = {}
     matched = []
     as_overrides = {}
-    for i, f in enumerate(cands, 1):
+    for f in cands:
         name = f["name"]
-        status, text = attempt(name, inv, tmpdir)
-        key = status.split(":")[0]
-        stats[key] = stats.get(key, 0) + 1
-        if status == "match":
-            body, as_g, opt = text
-            open(os.path.join(staging, name + ".c"), "w").write(body)
-            matched.append((name, f["insns"]))
-            over = {}
-            if as_g != 0:
-                over["as_G"] = as_g
-            if opt != "-O3":
-                over["opt"] = opt
-            if over:
-                as_overrides["src/auto/%s.c" % name] = over
-        if i % 25 == 0 or i == len(cands):
-            print("  %d/%d attempted, %d matched"
-                  % (i, len(cands), len(matched)), flush=True)
+        status, text = results[name]
+        stats[status.split(":")[0]] = stats.get(status.split(":")[0], 0) + 1
+        if status != "match":
+            continue
+        body, as_g, opt = text
+        open(os.path.join(staging, name + ".c"), "w").write(body)
+        matched.append((name, f["insns"]))
+        over = {}
+        if as_g != 0:
+            over["as_G"] = as_g
+        if opt != "-O3":
+            over["opt"] = opt
+        if over:
+            as_overrides["src/auto/%s.c" % name] = over
 
     print("\n=== results over %d candidates ===" % len(cands))
     for k in sorted(stats, key=lambda k: -stats[k]):
@@ -190,14 +212,20 @@ def main():
     print("\nmatched %d functions, %d instructions (%d bytes)"
           % (len(matched), insns, insns * 4))
     # record the per-file assembler -G that the build needs
-    if as_overrides:
-        path = os.path.join(REPO, "config", "cflags.json")
-        cfg = json.load(open(path))
-        cfg.setdefault("files", {})
-        cfg["files"].update(as_overrides)
-        json.dump(cfg, open(path, "w"), indent=2)
-        print("recorded as_G overrides for %d file(s) in config/cflags.json"
-              % len(as_overrides))
+    path = os.path.join(REPO, "config", "cflags.json")
+    cfg = json.load(open(path))
+    cfg.setdefault("files", {})
+    # Replace the src/auto entries rather than merging into them.  This run is
+    # the authority on what src/auto contains, so merging would leave overrides
+    # behind for files it no longer produces, and those stale entries would
+    # silently apply to a future file of the same name.
+    cfg["files"] = {k: v for k, v in cfg["files"].items()
+                    if not k.startswith("src/auto/")}
+    cfg["files"].update(as_overrides)
+    cfg["files"] = {k: cfg["files"][k] for k in sorted(cfg["files"])}
+    json.dump(cfg, open(path, "w"), indent=2)
+    print("recorded flag overrides for %d of %d matched file(s)"
+          % (len(as_overrides), len(matched)))
 
     # single atomic-ish swap: src/auto is never seen partially written
     if os.path.isdir(OUTDIR):
