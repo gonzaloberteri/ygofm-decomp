@@ -39,13 +39,13 @@ Current status, from `py -3 tools/progress_map.py`:
 
 | | total | matched | |
 |---|---|---|---|
-| game functions | 678 | **131** | 19.32% |
-| game instructions | 99,265 | **1,636** | **1.65%** |
+| game functions | 1,206 | **317** | 26.29% |
+| game instructions | 99,265 | **4,246** | **4.28%** |
 
 ```
-todo, uses $gp:   224 functions   50,102 instructions (50.47%)
-todo:             323 functions
-Psy-Q SDK:        671 functions   409 identified by signature, none decompiled
+todo, uses $gp:   321 functions   43,639 instructions (43.96%)
+todo:             568 functions
+Psy-Q SDK:        720 functions   409 identified by signature, none decompiled
 ```
 
 **Instructions matched is the number to watch.** The two metrics disagree by
@@ -179,8 +179,12 @@ Flags live next to the code they describe, as a comment on the first line of
 each file, read by `tools/cc.py`:
 
 ```c
-/* decomp-flags: opt=-O2 as_G=8 */
+/* decomp-flags: opt=-O2 as_G=8 cc1_G=0 cc1_extra=-fno-schedule-insns2 expand_div=1 */
 ```
+
+`cc1_extra` names an individual pass, because no `-O` level reproduces some
+functions. `expand_div` turns on ASPSX's two-guard division macro, which GCC
+never emits itself -- see PLAN.md.
 
 Keeping them in the file rather than in a shared JSON is what lets parallel
 workers run without contending on one config. `config/cflags.json` holds the
@@ -257,6 +261,8 @@ reasons rather than source reasons. The patch honours the size operand of
 | `split_funcs.py` | find functions the disassembly merged, and emit labels to split them |
 | `make_iso.py` | rebuild the disc image with the original LBAs |
 | `verify_boot.py` | hash gate plus a DuckStation smoke test from a save state |
+| `trace.py` | breakpoint coverage under PCSX-Redux, optionally from a save state |
+| `sample.py` | PC-sampled hotness ranking, optionally from a save state |
 | `cc.py` | compile one C file the way the original build did |
 | `match.py` | compare a compiled file against the original, per function |
 | `flagsweep.py` | search the flag space for what makes a file match |

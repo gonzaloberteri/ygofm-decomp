@@ -60,14 +60,17 @@ PY tools/flagsweep.py src/manual/X.c # search the flag space for a file
 PY tools/autodecomp.py --all --max-insns 250 --jobs 16
 PY tools/permute.py func_XXXXXXXX --run   # decomp-permuter, for register diffs
 PY tools/funcs.py --candidates       # pick targets
+PY tools/sample.py --state 4        # hotness ranking from the in-duel state
+PY tools/sample.py --report         # reprint the last ranking
+PY tools/trace.py --state 4         # breakpoint coverage (slow: ~4 s/frame)
 ```
 
 ## Current state
 
 ```
 1206 game functions, 99,265 instructions
- 234 matched (19.40% of functions, 3.36% of instructions)
- 404 use $gp (45.1% of game code)
+ 317 matched (26.29% of functions, 4.28% of instructions)
+ 321 todo functions use $gp (43,639 instructions, 43.96% of game code)
  720 SDK functions, 409 named by signature, none decompiled
 ```
 
@@ -104,30 +107,53 @@ same ones independently, which was wasted effort.
    four workers averaged ~12–20 matches each. The technique that actually works is
    disassembling your own object with `mipsel-none-elf-objdump -d` and reading it
    beside `asm/code_002800.s` — not sweeping flags blind.
-2. **`func_8005BFC8` (139 insns) and `func_80043960` (155 insns).** The only
-   *evidence-backed* targets so far: PC sampling under PCSX-Redux showed they
-   actually execute. Prefer functions known to run.
-3. **The register-allocation class.** ~12 known near-misses differ by exactly one
-   register because the original wants `-fschedule-insns2`'s ordering with the
-   non-sched2 allocation. `tools/permute.py` took one from score 40 to 10 in
-   45,000 iterations, then plateaued. `tools/ref/gcc-2.95.2/gcc/local-alloc.c` is
-   on disk — reading why sched2 changes allocation either answers this or closes
-   it. Do not sweep more flags; a 30-combination sweep separated none of them.
-4. **`expand_div` is broken and known-broken.** ASPSX's division macro is still
-   not emitted, so any function with `/` or `%` cannot match. `maspsx`'s `div`/`rem`
-   handler returns early for a `$zero` destination *before* the expansion block,
-   and the expansion assumes the destination register is in the `div` line whereas
-   GCC emits a separate `mfhi`. Fixing it needs that split form handled in
-   `tools/maspsx` (our fork).
-5. **`include/game.h`** exists with 17 machine-checked structs. New work should use
-   it. **Do not retrofit existing matching files onto it** — `-G8` decides
-   addressing from the *declaration's* size and `volatile` changes instruction
-   count, so several files depend on their local declaration exactly as written.
-6. **Execution coverage (optional, expensive).** Breakpoints work but 1206 of them
-   slow the interpreter to frame 400 in 45 minutes. Batching ~100 per pass over 13
-   passes would give true boot coverage. Sampling is fast but aliases against the
-   60 Hz loop. Static call-graph reachability from `__SN_ENTRY_POINT` needs no
-   emulator and is the cheap alternative.
+2. **The evidence-backed targets.** Sampling the in-duel save state named 11
+   functions that actually execute, 1,179 instructions, none decompiled:
+   `func_8004ADE8` (355), `func_8004C114` (195), `func_8004AAFC` (122),
+   `func_8004C8C8` (102), `func_8004A0FC` (96), `func_800478EC` (95),
+   `func_80049FB4` (82), `func_8004B374` (74), `func_8004B734` (72),
+   `func_8004A43C` (55), `func_8004C84C` (31). They are one coherent module --
+   the **sound driver** behind `D_8009B458` -- so they are worth doing together
+   as a translation unit. `func_8005BFC8` (139) and `func_80043960` (155) came
+   from the earlier boot sampling and still stand.
+   `PY tools/sample.py --state 4 --report` reprints the list.
+
+3. **The register-allocation class, now with better candidates.** ~12 known
+   near-misses differ only by register allocation. Three fresh ones from this
+   session are in `build/rejected/` with correct length and structure:
+   `func_8005F1B8` (3/49 -- the best permuter candidate in the repo),
+   `func_80018C34` (4/49), and `func_8004C84C`. Do not sweep more flags; a
+   30-combination sweep separated none of them. `tools/ref/gcc-2.95.2/gcc/
+   local-alloc.c` is on disk.
+
+4. **Pad input under Lua, to reach duel logic.** The duel sampling above is the
+   *idle* loop: no controller input is supplied, so summon, attack and fusion
+   logic are still unmeasured. Driving the pad from `tools/sample.lua` is the
+   cheapest way to extend coverage into the code this project most wants to read.
+
+5. **`include/game.h`** exists with 17 machine-checked structs, plus
+   `SoundVoice.unk_1E`. New work should use it. **Do not retrofit existing
+   matching files onto it** -- `-G8` decides addressing from the *declaration's*
+   size and `volatile` changes instruction count, so several files depend on
+   their local declaration exactly as written.
+
+6. **Execution coverage, the expensive half.** Breakpoint coverage under
+   `-interpreter` still does not scale: ~4 s/frame with 1206 armed. Batching
+   ~100 per pass over 13 passes would give true coverage of a restored state,
+   which is now affordable per-pass because the state load skips the boot.
+   Static call-graph reachability from `__SN_ENTRY_POINT` remains the cheap
+   alternative and needs no emulator.
+
+### Resolved since the last handoff, do not redo
+
+* **`expand_div` works.** ASPSX's two-guard division macro is emitted, verified
+  against target bytes. 38 game functions / 9,580 instructions (9.66%) are
+  unblocked; nearly all are large.
+* **Division by a literal is unmatchable by construction.** GCC 2.95.2
+  strength-reduces it at every `-O` level. A real `div` on a constant proves the
+  source named the divisor in a *variable*, declared at its point of use.
+* **The duel save states exist**, in `tools/states/` (gitignored). This was the
+  item marked "needs a human".
 
 ## Hard rules
 
