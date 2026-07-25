@@ -1157,3 +1157,27 @@ register file, `D_800F5BE8` its state (u8 stack pointer at `+0x14`, `s32` stack 
 `+0x18`), and every `func_800709xx`/`func_8007
 13xx`/`func_800714xx` is one opcode.
 Worth decompiling as a single translation unit rather than piecemeal.
+
+### 2026-07-25 — I committed a broken state; added the check that would have caught it
+
+I committed with `git add -A` while a worker was still running, having said
+explicitly that I would not, and the committed tree was **not byte-identical** —
+34 bytes wrong. Removing the offending file exposed three more behind it.
+
+Eight files across `src/manual/` were non-matching drafts left on disk. Workers
+were told to delete anything that did not match; some did not, and one file
+matched per its author but conflicted with a generated `src/auto/` file covering
+the same span.
+
+Whack-a-mole was the wrong response. `tools/verify_src.py` now checks **every**
+file individually and can quarantine failures to `build/rejected/` (moved, not
+deleted, so the work survives). It runs in `tools/all.py` *before* `build.py`,
+because `build.py` reports a hash mismatch somewhere in a 1.9 MB image without
+saying which file caused it — the per-file check names it.
+
+After quarantining the eight: **234 functions from C, byte-identical.**
+
+The lesson is about the gate, not the workers. A non-matching file is not
+harmless work-in-progress — it silently replaces correct assembly with wrong
+code — and until now nothing checked for one except a whole-binary hash that
+cannot localise the fault.

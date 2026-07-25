@@ -15,6 +15,10 @@ STEPS = [
     ("classify regions",  [PY, "tools/map_regions.py"]),
     ("generate config",   [PY, "tools/gen_splat_config.py"]),
     ("split",             [PY, "-m", "splat", "split", "config/splat.yaml"]),
+    # per-file check before the whole-binary one: build.py reports a hash
+    # mismatch somewhere in the image, which does not say which file is at
+    # fault. This names it.
+    ("verify sources",    [PY, "tools/verify_src.py"]),
     ("build executable",  [PY, "tools/build.py"]),
     ("build disc image",  [PY, "tools/make_iso.py"]),
     ("progress map",      [PY, "tools/progress_map.py"]),
