@@ -89,6 +89,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("func")
     ap.add_argument("--run", action="store_true")
+    ap.add_argument("--keep-base", action="store_true",
+                    help="do not overwrite an existing base.c (use to continue "
+                         "from a variant the permuter already improved)")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     args = ap.parse_args()
     name = args.func

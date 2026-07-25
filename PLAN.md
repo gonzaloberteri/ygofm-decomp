@@ -1274,3 +1274,38 @@ base score = 40
 Nothing structural, nothing reordered — purely register allocation. That is a
 second, independent confirmation of what four workers reported by hand, from a
 tool with no knowledge of their conclusions.
+
+#### Permuter: measured result on func_80044278
+
+**44,935 iterations on 16 cores. Base score 40 → best 10, and it stops there.**
+Reached independently twice, so the plateau is real: it resolves 6 of the 8
+register differences and cannot close the last 2.
+
+The winning mutation was `do { func_a(); func_b(); } while (0)` around two calls
+— a statement-grouping change that shifts register allocation, and precisely the
+kind of thing no compiler flag expresses. Its penalty breakdown (8 register
+differences, zero stack/branch/reordering/insertion/deletion) independently
+confirmed what four workers concluded by hand.
+
+So the permuter is **real but partial** on this class: worth running, not a
+solution to it. The remaining 2 differences are the same sched2-ordering-with-
+non-sched2-allocation conflict, and the next move is `local-alloc.c` in
+`tools/ref/gcc-2.95.2/`, not more search.
+
+#### Two of my own errors nearly became reported results
+
+1. A run I read as "plateaued at 10" had in fact **crashed instantly** on the
+   objdump lookup, because I invoked `permuter.py` directly rather than through
+   `tools/permute.py`, which is what sets PATH. Zero iterations. Fixed durably by
+   adding `mipsel-none-elf-objdump` to the fork's arch name list, so it no longer
+   depends on the entry point used.
+2. A shell chain of the form `cmd1 && cmd2 ; echo "PUSHED"` printed success after
+   the `&&` chain broke at a failed `cd`. The push had not happened. That pattern
+   is unsound and should not be used.
+
+Both were caught only by inspecting the artifact rather than trusting the exit
+path — the same failure mode as the `expand_div` "verification" that counted
+cc1's own guard.
+
+`tools/permute.py --keep-base` now exists, because `--run` re-scaffolded and
+discarded an already-improved base.
