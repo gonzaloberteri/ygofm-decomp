@@ -74,10 +74,36 @@ def write_cue():
     return cue
 
 
+def duckstation_running():
+    """True if an instance is already up (tasklist is enough on Windows)."""
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq %s"
+                              % os.path.basename(DUCKSTATION)],
+                             capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return os.path.basename(DUCKSTATION).lower() in out.lower()
+
+
 def boot(slot, seconds):
     state = os.path.join(STATE_DIR, "%s_%d.sav" % (SERIAL, slot))
     if not os.path.exists(state):
         print("  save state slot %d not found at %s" % (slot, state))
+        return False
+
+    # DuckStation is single-instance: launching a second one hands the command
+    # line to the first and exits 0 immediately.  That looked exactly like a
+    # boot failure and made this gate flaky, so wait for a previous run to go
+    # away rather than misreporting it.
+    waited = 0.0
+    while duckstation_running() and waited < 30:
+        if waited == 0.0:
+            print("  waiting for an existing DuckStation instance to exit")
+        time.sleep(1.0)
+        waited += 1.0
+    if duckstation_running():
+        print("  another DuckStation instance is still running -- cannot test "
+              "cleanly; close it and retry")
         return False
 
     cue = write_cue()
@@ -88,7 +114,13 @@ def boot(slot, seconds):
     deadline = time.time() + seconds
     while time.time() < deadline:
         if proc.poll() is not None:
-            print("  emulator exited early with code %s" % proc.returncode)
+            # exit 0 within a second or two is the single-instance handoff, not
+            # a crash; a real boot failure shows a non-zero code or a hang
+            elapsed = seconds - (deadline - time.time())
+            print("  emulator exited after %.1fs with code %s%s"
+                  % (elapsed, proc.returncode,
+                     " (looks like a single-instance handoff, not a crash)"
+                     if proc.returncode == 0 and elapsed < 3 else ""))
             return False
         time.sleep(0.5)
 
