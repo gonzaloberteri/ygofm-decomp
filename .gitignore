@@ -18,3 +18,4 @@ tools/m2c/
 
 __pycache__/
 *.pyc
+mkpsxiso.cue
