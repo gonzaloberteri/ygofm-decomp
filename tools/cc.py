@@ -62,10 +62,16 @@ def flags_for(src):
                 continue
             key, _, value = token.partition("=")
             key = key.strip()
-            if key in ("as_G", "cc1_G"):
+            if key in ("as_G", "cc1_G", "expand_div"):
                 out[key] = int(value)
             elif key == "opt":
+                # comma separated too: part of the binary was built with no -O
+                # at all, so `opt=-O0,-fomit-frame-pointer` has to be sayable.
                 out[key] = value
+            elif key == "cc1_extra":
+                # comma separated, because the comment is split on whitespace:
+                #   cc1_extra=-fno-schedule-insns2,-fno-peephole
+                out[key] = [t for t in value.split(",") if t]
     return out
 
 # Recovered by tools/flagsweep.py, not guessed.  -O2 gets simple leaf functions
@@ -101,17 +107,33 @@ def compile_c(src, obj, extra_flags=(), as_g=None):
     fl = flags_for(src)
     if as_g is not None:
         fl["as_G"] = as_g
-    cc1_flags = CC1_BASE + [fl["opt"], "-G%d" % fl["cc1_G"]]
+    # `opt` may carry several tokens, comma separated: part of the binary was
+    # built with no -O at all, so `opt=-O0,-fomit-frame-pointer` must be sayable.
+    opt_flags = [t for t in str(fl["opt"]).split(",") if t]
+    cc1_flags = CC1_BASE + opt_flags + ["-G%d" % fl["cc1_G"]]
+    # Per-file cc1 flags beyond -O/-G.  Needed because no single -O level
+    # reproduces some functions: -O1 gives the original's epilogue order but the
+    # wrong prologue, -O2 the reverse, and the difference is the post-reload
+    # scheduler hoisting `lw $ra` above trailing stores.  That is reachable only
+    # by naming the pass, e.g. cc1_extra=-fno-schedule-insns2.
+    cc1_flags += list(fl.get("cc1_extra", []))
     run([CC1] + cc1_flags + list(extra_flags) + [tmp, "-o", asm])
+
+    maspsx_flags = ["--aspsx-version", ASPSX_VERSION, "--run-assembler",
+                    "--gnu-as-path", GNU_AS, "--dont-force-G0"]
+    # ASPSX guards division with checks for /0 *and* INT_MIN/-1, and puts mfhi
+    # after both.  GNU as emits only the /0 check, so any function containing a
+    # `%` or `/` is a few instructions short unless maspsx expands it itself.
+    if fl.get("expand_div"):
+        maspsx_flags.append("--expand-div")
 
     with open(asm) as fp:
         stage = subprocess.run(
             # --dont-force-G0 matters: maspsx injects -G0 by default, which
             # cancels the small-data area and turns every gp-relative access
             # back into a %hi/%lo pair.
-            [sys.executable, MASPSX, "--aspsx-version", ASPSX_VERSION,
-             "--run-assembler", "--gnu-as-path", GNU_AS, "--dont-force-G0",
-             "-march=r3000", "-mabi=32", "-EL", "-G%d" % fl["as_G"],
+            [sys.executable, MASPSX] + maspsx_flags +
+            ["-march=r3000", "-mabi=32", "-EL", "-G%d" % fl["as_G"],
              "-O0", "-o", obj],
             stdin=fp, capture_output=True, text=True)
     if stage.returncode != 0:
