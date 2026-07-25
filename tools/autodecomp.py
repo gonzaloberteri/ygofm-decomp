@@ -40,27 +40,147 @@ GP_BASE = 0x8009AF08
 # a known constant, so each of those names a specific global: rewriting it into a
 # real extern at gp+offset both compiles and lets the assembler emit the GPREL16
 # relocation that reproduces the original offset.
-GP_FIELD = re.compile(
-    r"M2C_FIELD\(\s*saved_reg_gp\s*,\s*([A-Za-z_][A-Za-z0-9_ ]*?)\s*\*\s*,"
-    r"\s*(0x[0-9A-Fa-f]+|-?\d+)\s*\)")
+#
+# Two syntactic families occur, and both have to be recognised or the whole
+# function is thrown away:
+#
+#   M2C_FIELD(saved_reg_gp, T *, off)   the object at gp+off, read as T
+#   saved_reg_gp + off                  the *address* gp+off (addiu $r, $gp, off)
+#
+# The offset itself is never checked by tools/match.py -- R_MIPS_GPREL16 masks
+# the low 16 bits away, since the linker owns them -- so it has to be right by
+# construction rather than by observation.  It is: the offset is what picks the
+# extern's name, and the name is what the link resolves back to gp+off.  The
+# load/store opcode and base register are *not* masked, so a wrong type does
+# show up as a mismatch rather than as a false match.
+GP_FIELD_HEAD = re.compile(r"\bM2C_FIELD\(\s*saved_reg_gp\s*,")
+GP_ADDR = re.compile(r"\bsaved_reg_gp\s*([-+])\s*"
+                     r"(0[xX][0-9A-Fa-f]+|\d+)\b")
+# "T *", "T **", ... -- a plain object or pointer type
+GP_PLAIN_TYPE = re.compile(
+    r"^([A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)\s*(\*+)$")
+# "M2C_UNK (**)(void *, s32)" -- pointer to a function pointer.  The name has to
+# go inside the parentheses, which is why this cannot share the plain path.
+GP_FUNC_TYPE = re.compile(r"^(.*?)\(\s*\*\s*\*\s*\)\s*(\(.*\))$", re.S)
+INT_LITERAL = re.compile(r"^[-+]?(?:0[xX][0-9A-Fa-f]+|[0-9]+)$")
+
+
+def _const(text):
+    """Integer value of a C integer literal, or None if it is not one."""
+    text = text.strip()
+    if not INT_LITERAL.match(text):
+        return None
+    return int(text, 16) if "x" in text.lower() else int(text, 10)
+
+
+def _gp_decl(ctype, name):
+    """`extern` declaration of the object that `*(ctype)(gp + off)` reads.
+
+    m2c's second M2C_FIELD argument is a *pointer* to the accessed object, so
+    the object's own type is that with one indirection removed -- and the name
+    belongs wherever C's declarator syntax puts it, which for a function
+    pointer is inside the parentheses.  Returns None for any type this cannot
+    reproduce exactly; guessing would cost more downstream than skipping does.
+    """
+    ctype = " ".join(ctype.split())
+    m = GP_FUNC_TYPE.match(ctype)
+    if m:
+        # "M2C_UNK (**)(void *)" -> "M2C_UNK (*D_800E9DB0)(void *)"
+        return "%s (*%s)%s" % (m.group(1).strip(), name, m.group(2))
+    m = GP_PLAIN_TYPE.match(ctype)
+    if m:
+        base, stars = m.group(1), m.group(2)[:-1]
+        if not stars and base == "void":
+            return None            # `extern void x;` is not a declaration
+        return "%s %s%s" % (base, stars, name)
+    return None
+
+
+def _split_args(text):
+    """Split a macro argument list on its top-level commas."""
+    parts, depth, cur = [], 0, ""
+    for ch in text:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return parts
+
+
+def _close_paren(text, i):
+    """Index just past the ')' matching the '(' at text[i], or -1."""
+    depth = 0
+    while i < len(text):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return -1
 
 
 def rewrite_gp(body):
-    """Replace saved_reg_gp field accesses with declared externs."""
+    """Replace saved_reg_gp accesses with declared externs at gp+offset."""
     decls = {}
 
-    def sub(m):
-        ctype, off = m.group(1).strip(), int(m.group(2), 0)
-        name = "D_%08X" % (GP_BASE + off)
-        decls[name] = ctype
-        return name
+    def declare(name, decl):
+        # One address cannot be two different types at once.  m2c does not
+        # currently produce that, but silently keeping one of the two would
+        # change what the other access reads, so refuse instead.
+        return decls.setdefault(name, decl) == decl
 
-    new = GP_FIELD.sub(sub, body)
-    if "saved_reg_gp" in new:
+    # Field accesses.  Innermost first, because M2C_FIELD nests -- the outer
+    # one's base is the inner one's result and must not be touched here.
+    while True:
+        m = GP_FIELD_HEAD.search(body)
+        if m is None:
+            break
+        open_at = body.index("(", m.start())
+        end = _close_paren(body, open_at)
+        if end < 0:
+            return None, None
+        args = _split_args(body[open_at + 1:end - 1])
+        if len(args) != 3:
+            return None, None
+        off = _const(args[2])
+        if off is None:
+            return None, None      # computed offset: not one fixed global
+        name = "D_%08X" % (GP_BASE + off)
+        decl = _gp_decl(args[1].strip(), name)
+        if decl is None or not declare(name, decl):
+            return None, None
+        body = body[:m.start()] + name + body[end:]
+
+    # Address-of forms.  `void *` rather than a made-up object type: nothing in
+    # the instruction says what lives there, and a wrong guess would silently
+    # compile.  A dereference of the result -- which happens when m2c has lost
+    # the load width -- then fails to compile instead of reading a wrong width.
+    failed = []
+
+    def addr(m):
+        off = _const(m.group(2))
+        if off is None:
+            failed.append(True)
+            return m.group(0)
+        name = "D_%08X" % (GP_BASE + (off if m.group(1) == "+" else -off))
+        # An address-of and a field access can name the same object; the field
+        # access knows the real type, so it wins.
+        decls.setdefault(name, "u8 " + name)
+        return "((void *) &%s)" % name
+
+    body = GP_ADDR.sub(addr, body)
+    if failed or "saved_reg_gp" in body:
         return None, None          # a form we do not handle; skip this function
-    prologue = "".join("extern %s %s;\n" % (t, n)
-                       for n, t in sorted(decls.items()))
-    return new, prologue + ("\n" if prologue else "")
+    prologue = "".join("extern %s;\n" % decls[n] for n in sorted(decls))
+    return body, prologue + ("\n" if prologue else "")
 
 
 def run_m2c(name):

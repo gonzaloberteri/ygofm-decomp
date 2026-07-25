@@ -912,3 +912,188 @@ in-duel save state passing.
 
 `size-differs` still dominates and still means the same thing: the C compiles
 but does not express what the original expressed. That is per-function work.
+
+### 2026-07-25 — the gp-unhandled bucket is gone, and a verification hole
+
+`rewrite_gp()` in `tools/autodecomp.py` handled exactly one syntactic form. Over
+644 candidates, 173 m2c outputs mention `saved_reg_gp`, in three families:
+
+| shape | occurrences | was |
+|---|---|---|
+| `M2C_FIELD(saved_reg_gp, T *, off)` | 458 | handled |
+| `M2C_FIELD(saved_reg_gp, T **, off)` | 51 | **unhandled** |
+| `M2C_FIELD(saved_reg_gp, M2C_UNK (**)(args), off)` | 5 | **unhandled** |
+| `saved_reg_gp + off` (bare address, from `addiu $r, $gp, off`) | 10 | **unhandled** |
+
+The old regex allowed exactly one `*` in the type and only ever looked inside
+`M2C_FIELD`. Parsing is now a balanced-paren scan, because function-pointer
+types contain top-level-looking commas, and offsets are resolved innermost-first
+so nested `M2C_FIELD` still works. There are no negative or computed offsets and
+no `volatile`/`const` forms in this binary.
+
+**`gp-unhandled`: 42 -> 0.** Matches 87 -> 90, instructions 947 -> 992. The 42
+redistribute as 3 match / 29 size-differs / 6 differs / 4 compile-failed, and the
+deltas sum to exactly 42, so nothing that matched before regressed.
+
+#### The gp offset is not verified by the byte comparison
+
+`R_MIPS_GPREL16` is masked `0xFFFF0000`, because the linker owns the low half --
+so **a wrong gp offset would produce a false MATCH.** It is correct by
+construction here: the offset is what picks the extern's name, and the name is
+what the link resolves back to `gp+off`. But that is an invariant to hold
+deliberately, not something the check enforces. The opcode and base register are
+*not* masked, so a wrong load *width* does still show up.
+
+This is the second known hole of the same shape, after the jump-table one: a
+function dispatching through a jump table can report MATCH with its table
+misplaced. **Both are closable** -- these symbol names encode their own
+addresses, so the expected `%hi`, `%lo` and `gp_rel` values can be computed and
+compared instead of masked. Worth doing; `match.py` is currently treated as
+authoritative and is not quite.
+
+Also learned: the gp bucket was largely hiding unrelated m2c defects. Of the four
+that now fail to compile, one references a static comparator m2c never declares,
+one emits a bare `sp`, one emits `*((int) + D_80090DF8)(arg)` for a jump-table
+call. Those block manual work on those functions too.
+
+### 2026-07-25 — include/game.h, and corrections to struct claims recorded here
+
+`include/game.h` (1183 lines) declares 17 structs and ~70 `$gp` globals, derived
+from the byte-matching files — whose declarations are evidence, because
+byte-equality verifies them. All 17 sizes and 26 key offsets are **machine
+checked** with negative-width-bitfield assertions (GCC 2.95.2 has no
+`_Static_assert`), and the check was deliberately broken once to confirm it
+actually fails. Sizes are not eyeballed.
+
+Two structures turned out not to exist as separate objects:
+
+* **`D_800F0548` is `&D_800EFE48[0x10]`** — `0x800F0548 - 0x800EFE48 = 0x700 =
+  0x10 * 0x70`. One pool of 0x60 records with two allocators, not two arrays.
+* **`D_800F39B0` is `D_800F2C40 + 0xD70`** — it names a field inside the record,
+  not a separate table.
+
+`GameState` is at a *fixed* address, not allocated: `0x80046788` stores
+`0x801E0000` into `gp+0x554`, and `gp+0x558` holds `0x801E1650 == state+0x1650`,
+which is also its size.
+
+#### Corrections to claims recorded earlier in this document
+
+These came from previous workers' reports and I wrote them down without
+independent checking. They are wrong or unsupported:
+
+* **"`D_800E9EC8` is a pad/controller block" is unsupported.** Nothing in the
+  module touches the pad. The evidence — the enclosing module calls
+  `GsSortBoxFill`, `+0x00` holds a 24-bit value with sentinel `0xFFFFFF`, RGB-
+  looking byte triples are written nearby, `func_80015998` spins on bit 7 of
+  `+0x06` — points to a screen fade/flash controller. Two earlier workers named
+  the same struct `Pad800E9EC8` and `Sound` respectively; neither is supported,
+  and the header keeps it as `Unk800E9EC8` with the evidence recorded.
+* **"master volumes at +0x514/+0x516"** are offsets *inside `SoundWork`*, not
+  `$gp` offsets. Easy to misread as written.
+* **"`D_800F2C40[]` per-duelist records"** is unconfirmed; the type is
+  `Rec800F2C40`.
+* A field pair named `key`/`value` in one existing file is an interpretive error:
+  `func_800601D0` keys on `+0x00` and returns `+0x04`, `func_80060170` keys on
+  `+0x04` and writes `+0x00`, and both byte-match — so it is a two-way pair
+  table, not a key/value map.
+
+Genuine disagreements between byte-matching files, left unresolved rather than
+guessed: offset `0x34` is an s16 `z` coordinate in one module and a u16 bitfield
+in another; `SoundWork+0x500` is either `SpuVoiceAttr.adsr2` or a single flag
+byte written 22 times; `D_800EB184` is both a pointer variable and
+`&D_800EB0F8[1].unk_28`; four globals disagree about `volatile` (all match either
+way, but `D_8009B112` genuinely needs it).
+
+**The header is additive reference material for new work only.** Retrofitting
+existing files onto it would break matches: `-G8` decides small-data addressing
+from the *declaration's* size, and `volatile` changes instruction count, so
+several matching files depend on their local declaration being exactly what it
+is. Note also that padding in existing files is **not** evidence — most of those
+"struct maps" are arbitrary filler around the few offsets actually addressed.
+
+### 2026-07-25 — wave 2 batch 1: 20 functions, and two structural gaps
+
+20 matched / 360 instructions. `-O2` dominated again; `-O1` only where the
+original's body order is unscheduled.
+
+**Highest-yield new idiom: two identical zero arguments passed as floats.** Two
+identical *integer* constants get re-materialised (`li $a2,0; li $a3,0`); two
+identical *float* constants CSE into one pseudo and are copied (`move $a3,$a2`).
+Declaring those parameters `f32` and passing `0.0f, 0.0f` matched four functions
+in this batch alone.
+
+Other idioms worth reusing:
+
+* `((Rec *)(off + (u8 *)array))->field` — an int on the *left* of the `+` flips
+  the `addu` operand order, and keeping the struct field access preserves the
+  `lw 0x28(reg)` displacement, where `off + base + 0x28` folds `0x28` into the
+  `%lo`. Note `match.py` masks the `%lo`, so that fold is invisible there but
+  shows up as a wrong displacement on the load.
+* `a > 0 && a < 4` folds to `addiu -1; sltiu 3`; two *nested* `if`s keep the
+  original's `blez` + `slti` pair.
+* `x < 0 ? -x : x` must be a ternary — the `if` form adds a `move`.
+* `sll 16; sra 16` on a *return value* means an `s32`-returning callee assigned
+  to an `s16` local.
+* **`cc1_G` signature corrected.** `lui %hi / sw %lo` without `$at` is *not*
+  proof of `cc1_G=0`: with `cc1_G=8` cc1 still emits its own pair for symbols it
+  knows are not small. The real `cc1_G=0` tell is the `%hi` and the loaded
+  *value* landing in **different registers**.
+* Mixing `$gp` and `%hi/%lo` in one function works by sizing declarations:
+  gp-side as ≤8-byte scalars, `%hi/%lo`-side wrapped in a struct >8 bytes, with
+  `as_G=8`.
+
+#### Gap 1 — a third tooling-side blocker
+
+**ASPSX duplicates a branch target into the delay slot; GNU as does not.** The
+original fills a `bnez` delay slot with a *copy* of the branch target's
+instruction (a loop-counter `addiu $s0,$s0,-1`) and retargets to target+4. cc1
+leaves the slot to the assembler in `.set reorder` mode, and maspsx/GNU as emits
+`nop`. **Any `continue` whose target is a loop-counter update is currently
+unmatchable for tooling reasons**, not source reasons — the same class as the
+`.extern` load-delay bug, and likewise fixable in principle.
+
+#### Gap 2 — split_funcs.py misses leaf-tail functions
+
+Four more merged spans in this batch that the detector did not find:
+`func_80059208` (3+3), `func_80024E24` (10+3), `func_80035668` (6+8),
+`func_80040424` (10+7). All are **leaf functions with no stack frame**, and the
+detector requires an `addiu $sp,$sp,-N` prologue to propose a split. That
+conservatism was deliberate and is now shown to cost real functions.
+
+A decisive signal is available and does not require guessing: **is the address
+the target of a `jal` anywhere in the binary?** If something calls it, it is a
+function. Implemented below.
+
+#### Also noted
+
+`-fno-schedule-insns2` changes register *allocation*, not just ordering — GCC
+2.95's local_alloc avoids reusing a just-dead register when post-reload
+scheduling is on. Five functions sit exactly between the two settings: sched2 off
+gives the original's register reuse but loses the prologue interleave and the
+load-delay filling. No flag separates them.
+
+And a trap worth recording: in one function, swapping the call's arguments
+byte-matches but is *semantically wrong*. The worker declined to do it. Byte
+equality does not imply the C says the right thing.
+
+#### split_funcs.py rewritten: the rule was unsound in both directions
+
+The prologue-based rule was wrong twice over. It **missed leaf functions**, which
+have no `addiu $sp` to recognise — and it was only accidentally safe against the
+opposite error, because a MIPS function may legitimately have **several `jr $ra`
+returns**, and splitting at each one would have cut single functions apart.
+
+The sound test uses splat's own analysis: splat emits a local label for every
+internal branch/jump target it found, so **an unlabelled instruction after a
+return is unreachable from the preceding code** and therefore begins something
+new. Verified on two spans:
+
+* `func_80059208` is genuinely two 3-instruction getters, one returning
+  `gp+0x570` and the other `&D_800F56A0`. Split.
+* `func_80040424` has an internal `.L80040444` target, so *that* return is not a
+  boundary — correctly left alone — while the unlabelled code after the second
+  return is split off.
+
+**435 further game-region functions** are hidden this way, beyond the 320 already
+applied. Applying them is pending: re-splitting the disassembly while
+hand-decompilation workers are mid-task would change the spans under them.

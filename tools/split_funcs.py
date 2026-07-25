@@ -36,6 +36,8 @@ SYMBOLS = os.path.join(REPO, "config", "split_syms.txt")
 
 LABEL = re.compile(r"^(?:glabel|dlabel|alabel|jlabel)\s+(\S+)")
 END = re.compile(r"^endlabel\s+(\S+)")
+# splat emits a local label for every internal branch/jump target it found
+LOCAL_LABEL = re.compile(r"^\.L[0-9A-F]{8}:")
 INSN = re.compile(r"^\s+/\* [0-9A-F]+ ([0-9A-F]{8}) ([0-9A-F]{8}) \*/\s+(\S+)(.*)$")
 
 
@@ -46,47 +48,91 @@ def spans():
         if not fn.endswith(".s"):
             continue
         cur = None
+        labelled = False
         for line in open(os.path.join(ASM_DIR, fn)):
             m = LABEL.match(line)
             if m:
                 cur = (m.group(1), [])
                 out.append(cur)
+                labelled = False
                 continue
             if END.match(line):
                 cur = None
                 continue
+            if LOCAL_LABEL.match(line):
+                labelled = True
+                continue
             m = INSN.match(line)
             if m and cur is not None:
                 cur[1].append((int(m.group(1), 16), int(m.group(2), 16),
-                               m.group(3), m.group(4)))
+                               m.group(3), m.group(4), labelled))
+                labelled = False
     return out
+
+
+JAL = re.compile(r"^\s+/\* [0-9A-F]+ [0-9A-F]{8} [0-9A-F]{8} \*/\s+jal\s+(\S+)")
+FUNC_NAME = re.compile(r"^func_([0-9A-F]{8})$")
+
+
+def call_targets():
+    """Every address reached by a `jal` anywhere in the disassembly.
+
+    This is the decisive test for "is this a function": if something calls it,
+    it is one.  It needs no heuristic, and it catches the leaf functions that the
+    prologue test below cannot -- a leaf with no stack frame has no `addiu $sp`
+    to recognise, and four such functions were found by hand after the first
+    pass missed them.
+    """
+    targets = set()
+    for fn in sorted(os.listdir(ASM_DIR)):
+        if not fn.endswith(".s"):
+            continue
+        for line in open(os.path.join(ASM_DIR, fn)):
+            m = JAL.match(line)
+            if not m:
+                continue
+            m2 = FUNC_NAME.match(m.group(1).strip())
+            if m2:
+                targets.add(int(m2.group(1), 16))
+    return targets
 
 
 def find_splits():
     """Addresses that look like the start of a merged-in second function."""
+    called = call_targets()
     proposals = []
     for name, insns in spans():
         if len(insns) < 4:
             continue
-        for i, (vram, word, mnem, rest) in enumerate(insns):
+        for i, (vram, word, mnem, rest, _lbl) in enumerate(insns):
             if mnem != "jr" or "$ra" not in rest:
                 continue
             nxt = i + 2                     # skip the delay slot
             if nxt >= len(insns):
                 continue                    # jr $ra ended the span: normal
-            start_vram, _, start_mnem, start_rest = insns[nxt]
+            start_vram, _, start_mnem, start_rest, start_labelled = insns[nxt]
 
-            # A function almost always opens by making stack room, or (for a
-            # leaf) by immediately doing work with no prologue.  Requiring the
-            # stack adjustment keeps this conservative -- a leaf tail merged
-            # into a previous function is left alone rather than guessed at.
+            # A function may legitimately have several `jr $ra` returns, so code
+            # after one is only a *new* function if nothing can branch to it.
+            # splat emits a local label for every internal branch/jump target it
+            # found, so an unlabelled instruction after a return is unreachable
+            # from the preceding code and therefore begins something new.
+            #
+            # This is what the earlier prologue-only rule got wrong in both
+            # directions: it missed leaf functions with no stack frame, and it
+            # would have mis-split multi-return functions had it not required a
+            # prologue. Recorded `why` says which corroborating signal applied.
+            if start_labelled:
+                continue                    # a branch target: same function
+            is_called = start_vram in called
             is_prologue = (start_mnem == "addiu" and "$sp, $sp, -" in start_rest)
-            if not is_prologue:
-                continue
             proposals.append({"container": name, "addr": start_vram,
                               "after": vram,
                               "insns_before": nxt,
-                              "insns_after": len(insns) - nxt})
+                              "insns_after": len(insns) - nxt,
+                              "why": ("called" if is_called else
+                                      "prologue" if is_prologue else
+                                      "unreachable-after-return")})
     return proposals
 
 
