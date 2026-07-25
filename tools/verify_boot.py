@@ -1,4 +1,4 @@
-"""Boot the rebuilt image in DuckStation and confirm it reaches a duel.
+"""Boot the rebuilt image in PCSX-Redux and confirm it reaches a duel.
 
 Two layers of verification:
 
@@ -14,6 +14,14 @@ Two layers of verification:
 Save state slots recorded from the original disc:
     1 = in-game start menu     2 = name input screen
     3 = first duel deck build  4 = in-game duel     <- acceptance target
+
+The emulator is PCSX-Redux, the same one tools/trace.py and tools/sample.py use,
+so the project needs exactly one emulator and one set of save states.  Redux is
+the choice because its Lua API is what makes the analysis tools possible at all;
+DuckStation, used here previously, has no scripting and forced this check to be
+"the process did not exit", which a black screen or a spinning loop passes.  What
+is measured now is Vsyncs delivered after the state is restored -- a hung game
+stops producing frames even though the process stays alive.
 """
 import argparse
 import hashlib
@@ -21,13 +29,16 @@ import json
 import os
 import subprocess
 import sys
-import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DUCKSTATION = (r"C:\Users\PC\AppData\Local\Programs\DuckStation"
-               r"\duckstation-qt-x64-ReleaseLTCG.exe")
-STATE_DIR = r"C:\Users\PC\AppData\Local\DuckStation\savestates"
-SERIAL = "SLUS-01411"
+REDUX = os.path.join(REPO, "tools", "bin", "redux", "pcsx-redux.exe")
+# The real BIOS.  Redux otherwise falls back to OpenBIOS, which is a
+# reimplementation and not something to trust for judging whether the game boots.
+BIOS = os.path.join(REPO, "tools", "bin", "redux", "SCPH1001.BIN")
+# Shared with tools/trace.py and tools/sample.py -- one set of states, captured
+# by hand in the Redux GUI (File -> Save state slots).
+STATE_DIR = os.path.join(REPO, "tools", "states")
+WORK = os.path.join(REPO, "build", "boot")
 
 SLOT_NAMES = {
     1: "in-game start menu",
@@ -65,79 +76,65 @@ def exact_gate():
     return ok
 
 
-def write_cue():
-    cue = os.path.join(REPO, "build", "ygofm.cue")
-    with open(cue, "w") as fp:
-        fp.write('FILE "ygofm.bin" BINARY\n'
-                 "  TRACK 01 MODE2/2352\n"
-                 "    INDEX 01 00:00:00\n")
-    return cue
-
-
-def duckstation_running():
-    """True if an instance is already up (tasklist is enough on Windows)."""
-    try:
-        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq %s"
-                              % os.path.basename(DUCKSTATION)],
-                             capture_output=True, text=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return os.path.basename(DUCKSTATION).lower() in out.lower()
-
-
-def boot(slot, seconds):
-    state = os.path.join(STATE_DIR, "%s_%d.sav" % (SERIAL, slot))
+def boot(slot, frames, timeout):
+    state = os.path.join(STATE_DIR, "SLUS01411.sstate%d" % slot)
     if not os.path.exists(state):
         print("  save state slot %d not found at %s" % (slot, state))
+        print("  capture it in the Redux GUI first (File -> Save state slots)")
         return False
 
-    # DuckStation is single-instance: launching a second one hands the command
-    # line to the first and exits 0 immediately.  That looked exactly like a
-    # boot failure and made this gate flaky, so wait for a previous run to go
-    # away rather than misreporting it.
-    waited = 0.0
-    while duckstation_running() and waited < 30:
-        if waited == 0.0:
-            print("  waiting for an existing DuckStation instance to exit")
-        time.sleep(1.0)
-        waited += 1.0
-    if duckstation_running():
-        print("  another DuckStation instance is still running -- cannot test "
-              "cleanly; close it and retry")
+    image = os.path.join(REPO, "build", "ygofm.bin")
+    if not os.path.exists(image):
+        print("  %s missing -- run tools/make_iso.py first" % image)
         return False
 
-    cue = write_cue()
-    cmd = [DUCKSTATION, "-batch", "-fastboot", "-statefile", state, "--", cue]
-    print("  launching: slot %d (%s)" % (slot, SLOT_NAMES.get(slot, "?")))
-    proc = subprocess.Popen(cmd)
+    os.makedirs(WORK, exist_ok=True)
+    result = os.path.join(WORK, "result.txt")
+    if os.path.exists(result):
+        os.remove(result)
 
-    deadline = time.time() + seconds
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            # exit 0 within a second or two is the single-instance handoff, not
-            # a crash; a real boot failure shows a non-zero code or a hang
-            elapsed = seconds - (deadline - time.time())
-            print("  emulator exited after %.1fs with code %s%s"
-                  % (elapsed, proc.returncode,
-                     " (looks like a single-instance handoff, not a crash)"
-                     if proc.returncode == 0 and elapsed < 3 else ""))
-            return False
-        time.sleep(0.5)
+    # -run is required: without it the emulator boots, sits paused and exits.
+    # No -debugger/-interpreter here, unlike trace.py -- nothing is being
+    # observed per instruction, so the dynarec is fine and much faster.
+    cmd = [REDUX, "-no-ui", "-stdout", "-run", "-fastboot",
+           "-bios", BIOS,
+           "-iso", image,
+           "-dofile", os.path.join("tools", "boot.lua"),
+           "-logfile", os.path.join("build", "boot", "redux.log")]
+    env = dict(os.environ, BOOT_STATE=state.replace("\\", "/"),
+               BOOT_FRAMES=str(frames), BOOT_OUT=result)
 
-    alive = proc.poll() is None
-    print("  ran %ds, process %s" % (seconds, "alive" if alive else "dead"))
-    proc.terminate()
+    print("  launching: slot %d (%s), %d frames"
+          % (slot, SLOT_NAMES.get(slot, "?"), frames))
+    # stdin must stay open: with -no-ui the TUI reads stdin, and an immediate
+    # EOF makes it quit before the game runs at all.
+    proc = subprocess.Popen(cmd, cwd=REPO, stdin=subprocess.PIPE, env=env)
     try:
-        proc.wait(timeout=10)
+        proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
+        print("  emulator hit the %ds timeout; killing it" % timeout)
         proc.kill()
-    return alive
+        proc.wait(timeout=30)
+        return False
+
+    if not os.path.exists(result):
+        print("  emulator exited with code %s and wrote no result -- it died "
+              "before finishing the run" % proc.returncode)
+        return False
+
+    line = open(result).read().strip()
+    print("  %s" % line)
+    # frame-limit is the pass: the game produced every frame asked of it after
+    # the state was restored.  Any other reason means it stopped early.
+    return "reason=frame-limit" in line
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--slot", type=int, default=4)
-    ap.add_argument("--seconds", type=int, default=20)
+    ap.add_argument("--slot", type=int, default=4, choices=(1, 2, 3, 4))
+    ap.add_argument("--frames", type=int, default=600,
+                    help="frames to run after the state is restored (~10s)")
+    ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--no-boot", action="store_true",
                     help="run the exact gate only, skip launching the emulator")
     args = ap.parse_args()
@@ -152,7 +149,7 @@ def main():
         return 0
 
     print("\nboot smoke test:")
-    if not boot(args.slot, args.seconds):
+    if not boot(args.slot, args.frames, args.timeout):
         print("\nFAIL  emulator did not stay up")
         return 1
 
