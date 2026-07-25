@@ -1616,3 +1616,103 @@ iteration. Left as a permuter candidate.
 without changing the struct size or any other offset. That offset is
 evidence-backed — it is read `lhu` and written `sh` in the original — unlike the
 `volatile`, which is not, and which was reverted.
+
+### 2026-07-25 — the register-allocation wall, explained from the compiler source
+
+**Retraction.** An earlier entry said: "Five functions sit exactly between the
+two settings: sched2 off gives the original's register reuse but loses the
+prologue interleave and the load-delay filling. **No flag separates them.**"
+That is wrong. A flag separates them, and it is `-Os`.
+
+`tools/ref/gcc-2.95.2/gcc/local-alloc.c` says why. In `block_alloc`, before
+allocating a quantity, GCC computes a deliberately *widened* lifetime:
+
+```c
+int fake_birth = MAX (0, qty_birth[q] - 2 + qty_birth[q] % 2);
+int fake_death = MIN (insn_number * 2 + 1, qty_death[q] + 2 - qty_death[q] % 2);
+```
+
+and tries `find_free_reg` with that first, falling back to the true lifetime
+only if it fails. The comment states the intent: "we try to avoid using hard
+registers allocated to qtys which are born immediately after this qty or die
+immediately before this qty" — i.e. **it avoids reusing a just-dead register.**
+That is the behaviour four workers described by hand without knowing its cause.
+
+The widening is gated on three conditions, and this is the part that matters:
+
+```c
+if (flag_schedule_insns_after_reload && !optimize_size && !SMALL_REGISTER_CLASSES)
+```
+
+`!optimize_size` is a *separate* gate from the scheduler flag. So there are
+**three** reachable modes, not two:
+
+| mode | sched2 | lifetime widening |
+|---|---|---|
+| `-O2` | on | **on** |
+| `-Os` | on | **off** |
+| `-O2 -fno-schedule-insns2` (identical to `-O1` here) | off | off |
+
+Confirmed by hashing cc1's output for `func_8001EC70` under five invocations —
+four distinct flag strings collapse to exactly three outputs:
+
+```
+-O2                        f3d9f65674
+-Os                        5cf8e0e0aa
+-Os -fschedule-insns2      5cf8e0e0aa   <- identical to -Os
+-Os -fno-schedule-insns2   9f31efd006
+-O2 -fno-schedule-insns2   9f31efd006   <- identical to -O1
+```
+
+`-Os -fschedule-insns2 == -Os` is the decisive one: **`-Os` does not turn sched2
+off.** It turns off the lifetime widening while leaving post-reload scheduling
+on — exactly the "sched2 ordering with non-sched2 allocation" combination the
+earlier entry said was unreachable.
+
+The register difference is visible directly. `-O2` puts the divide result in
+`$a0`, skipping `$v0`/`$v1` because the widened lifetime makes them conflict;
+`-Os` picks `$v1`, which is what the original has:
+
+```
+-O2:  div $0,$4,$2 / mflo $4 / lhu $3,96($16)
+-Os:  div $0,$3,$2 / mflo $3 / lhu $2,96($16)
+```
+
+**So `-Os` in this project is not a code-size heuristic.** It is the name of a
+distinct register-allocation mode, which is why it "matched one function nothing
+else could" and why it matched `func_8001EC70` here. Any near-miss whose only
+fault is a register that the original reuses and we do not — or the reverse —
+should be tried at `-Os` before anything else.
+
+#### Two load-bearing bugs in tools/permute.py, found by running the control
+
+The permuter had been run on exactly one function. Pointing it at
+`func_8005F1B8`, which `match.py` scores at 3 differing registers out of 49
+instructions, reported a **base score of 780**. A base score that far from the
+known truth is a harness fault, not a hard function.
+
+`compile.sh` bakes the flags in, because preprocessing strips the
+`decomp-flags` comment. It was passing `--as-g` and `opt` but **not `cc1_G` and
+not `expand_div`**, and anything not passed silently falls back to the
+*defaults* in `cc.flags_for` — which is not the same thing as the file's own
+flags. So `cc1_G` became 8 for a file needing 0, changing precisely the register
+allocation the permuter exists to search, and `expand_div` came out off, leaving
+every division six instructions short.
+
+With both passed, the same function's **base score is 15**, not 780. Every
+permuter result recorded before this fix is suspect for any file whose flags
+included either knob.
+
+The lesson is the one this document keeps relearning: the base score is a
+checkable prediction. `match.py` already knew the answer was "three registers",
+and 780 disagreed loudly enough to be worth chasing before spending 45,000
+iterations.
+
+#### Tooling audit, honestly
+
+Of the three tools added to attack the named blockers, after this session:
+**PCSX-Redux is heavily used** (save states, tracer, sampler, the duel
+ranking); **decomp-permuter was scaffolded but never actually run** on more than
+one function, and was misconfigured when it was; **the GCC source had never been
+opened**, and reading 80 lines of it answered a question that thirty compiler
+flags and 45,000 permuter iterations had not.

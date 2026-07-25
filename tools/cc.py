@@ -92,7 +92,7 @@ def run(cmd, **kw):
     return r
 
 
-def compile_c(src, obj, extra_flags=(), as_g=None, expand_div=None):
+def compile_c(src, obj, extra_flags=(), as_g=None, expand_div=None, cc1_g=None):
     tmp = obj + ".i"
     asm = obj + ".s"
     os.makedirs(os.path.dirname(obj) or ".", exist_ok=True)
@@ -109,6 +109,8 @@ def compile_c(src, obj, extra_flags=(), as_g=None, expand_div=None):
         fl["as_G"] = as_g
     if expand_div is not None:
         fl["expand_div"] = expand_div
+    if cc1_g is not None:
+        fl["cc1_G"] = cc1_g
     # `opt` may carry several tokens, comma separated: part of the binary was
     # built with no -O at all, so `opt=-O0,-fomit-frame-pointer` must be sayable.
     opt_flags = [t for t in str(fl["opt"]).split(",") if t]
@@ -159,10 +161,12 @@ def main():
                     help="override the assembler's -G for this file")
     ap.add_argument("--expand-div", type=int, default=None,
                     help="override ASPSX division macro expansion for this file")
+    ap.add_argument("--cc1-g", type=int, default=None,
+                    help="override the compiler's -G for this file")
     args = ap.parse_args()
     out = compile_c(args.src, args.obj,
                     args.flags.split() if args.flags else (), args.as_g,
-                    args.expand_div)
+                    args.expand_div, args.cc1_g)
     print("built %s" % out)
 
 
