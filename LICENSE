@@ -19,20 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Scope
-
-This licence applies to the original work in this repository: the tooling under
-tools/ (excluding tools/maspsx, tools/asm-differ and tools/m2c, which are git
-submodules carrying their own licences), the configuration under config/, the
-headers under include/, linker_scripts/, and the documentation.
-
-It does not apply to the decompiled C source under src/. That code is derived
-from Yu-Gi-Oh! Forbidden Memories (SLUS-01411), which is copyright Konami; it
-is a work of reverse engineering and carries whatever status the original does.
-No licence to it is granted here.
-
-No game code, game data, disc image, or Psy-Q SDK binary is distributed in this
-repository.

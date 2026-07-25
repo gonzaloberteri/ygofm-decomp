@@ -362,9 +362,13 @@ The tooling, configuration and documentation in this repository are original
 work and are released under the [MIT License](LICENSE).
 
 That licence covers `tools/`, `config/`, `include/`, `linker_scripts/` and the
-documentation. It does **not** cover the decompiled C under `src/`, which is
-derived from the original game and is a work of reverse engineering — it carries
-whatever status the original does, and no licence is granted for it here.
+documentation. It does **not** cover:
+
+* the decompiled C under `src/`, which is derived from the original game and is
+  a work of reverse engineering — it carries whatever status the original does,
+  and no licence is granted for it here;
+* `tools/maspsx`, `tools/asm-differ` and `tools/m2c`, which are git submodules
+  carrying their own upstream licences.
 
 Yu-Gi-Oh! Forbidden Memories is © Konami. This project is not affiliated with
 or endorsed by Konami or Sony Interactive Entertainment. No game code, game
