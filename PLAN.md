@@ -887,3 +887,28 @@ computed over an 80-instruction pool of merged functions.
 
 This is the third time a claim of mine survived the SHA-1 gate while being wrong
 about the program's structure. The gate proves bytes, not understanding.
+
+#### Re-run after the splits: automation 57 -> 87 functions
+
+With the 320 splits applied, the maspsx `.extern` nop fix in place and
+`cc1_extra` available, the automated pass over 880 candidates (≤250 instructions)
+matched **87 functions / 947 instructions**, against 57 / 540 before. For
+comparison, the previous attempt to move that number by widening the candidate
+pool and sweeping `-O` gained exactly one function -- so the gain here came from
+fixing the tooling and the disassembly, not from searching harder.
+
+Combined with the hand-decompiled set: **161 functions, 2,043 instructions
+(2.06%)**, executable and full disc image both byte-identical, boot from the
+in-duel save state passing.
+
+| outcome | count | share |
+|---|---|---|
+| size-differs | 452 | 51% |
+| compile-failed | 148 | 17% |
+| differs | 90 | 10% |
+| **match** | **87** | **10%** |
+| gp-unhandled | 85 | 10% |
+| m2c-failed | 18 | 2% |
+
+`size-differs` still dominates and still means the same thing: the C compiles
+but does not express what the original expressed. That is per-function work.
