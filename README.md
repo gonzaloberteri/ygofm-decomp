@@ -82,13 +82,19 @@ The bytes are right, so the hash never complained. See [PLAN.md](PLAN.md).
 * **Windows.** The Psy-Q tools are 32-bit PE binaries and run natively under
   WOW64, with no emulation layer. This is the one place where Windows is
   genuinely easier than Linux for this work.
-* **Python 3.12** (`py -3`). The bare `python` on PATH may be the Microsoft
-  Store stub, which does not work.
+* **Python 3.12 or 3.13** (`py -3`). The bare `python` on PATH may be the
+  Microsoft Store stub, which does not work.
 * **Your own copy of the game disc**, as a `MODE2/2352` `.bin`/`.cue` pair
   (517,872,768 bytes, 220,184 sectors, single track). Not distributed.
 * **Your own copy of the Psy-Q SDK**, releases 4.6 and 4.7. Proprietary SCE
   binaries; not distributed, and not redistributable.
-* DuckStation, for the boot test only.
+* **Your own PlayStation BIOS** (`SCPH1001.BIN`), for the emulator-based tools
+  only. Redux otherwise falls back to OpenBIOS, which is a reimplementation and
+  not something to trust when the question is whether the real game boots.
+* PCSX-Redux, for the boot test and the coverage/sampling tools.
+* Optionally Ghidra and a JDK 21, for type and struct recovery. Both live under
+  `tools/bin/` and are set up by `tools/ghidra_import.py`; nothing else needs
+  them.
 
 ### Setup
 
@@ -99,8 +105,10 @@ cd ygofm-decomp
 py -3 -m venv .venv
 .venv/Scripts/python.exe -m pip install splat64 spimdisasm rabbitizer pyelftools \
     colorama ansiwrap watchdog levenshtein n64img pygfxd tqdm intervaltree \
-    pylibyaml pyyaml crunch64 pycparser pillow
+    pylibyaml pyyaml crunch64 pycparser pillow toml
 ```
+
+`toml` is for `tools/permuter`, which imports it and fails at startup without it.
 
 If you cloned without `--recurse-submodules`, run
 `git submodule update --init --recursive`.
@@ -108,10 +116,19 @@ If you cloned without `--recurse-submodules`, run
 Then populate `tools/bin/`, which is gitignored and which you assemble yourself:
 
 ```
-tools/bin/bin/mipsel-none-elf-{as,ld,objcopy}.exe   PSn00bSDK binutils 2.40
-tools/bin/mkpsxiso-2.30-win64/mkpsxiso.exe          mkpsxiso 2.30
+tools/bin/bin/mipsel-none-elf-{as,ld,objcopy,cpp,objdump}.exe
+                                                    PSn00bSDK binutils 2.40
+tools/bin/mkpsxiso-2.30-win64/{mkpsxiso,dumpsxiso}.exe   mkpsxiso 2.30
 tools/bin/psyq/p46/Psy-Q - 46/BIN/CC1PSX.EXE        Psy-Q 4.6 (also INCLUDE/)
+tools/bin/psyq/p47/psyq-4_7-converted/lib/          Psy-Q 4.7, ELF-converted
+tools/bin/redux/pcsx-redux.exe                      PCSX-Redux (Windows x64)
+tools/bin/redux/SCPH1001.BIN                        your own BIOS dump
 ```
+
+The binutils bundle is PSn00bSDK's `gcc-mipsel-none-elf-12.3.0-windows.zip`,
+which unzips straight into `tools/bin/` with the `bin/` subdirectory already in
+the right place. PCSX-Redux has no tagged releases; the Windows build is the
+`dev-win-x64` continuous build.
 
 Psy-Q 4.7's libraries are additionally used by `tools/psyq_sigs.py`, because
 neither release is a superset of the other — the game links 4.6's `libgpu/font`
@@ -140,6 +157,61 @@ The disc rebuild reproduces the original image's SHA-1. Where it cannot —
 mkpsxiso regenerates ECC/EDC and the volume descriptor timestamps — the gate
 falls back to comparing the content of all nine files individually, which must
 match exactly.
+
+## The emulator, and the save states
+
+Everything that runs the game — `verify_boot.py`, `trace.py`, `sample.py` — uses
+**PCSX-Redux**, and only Redux. It is the choice because of its Lua API: the
+coverage and sampling tools are Lua scripts driving the emulator from inside,
+which is not something DuckStation can do. Keeping a second emulator around for
+the boot test alone meant two installs and two incompatible save-state formats
+for no benefit, so the boot test was moved over as well.
+
+Four save states are needed, captured by hand in the Redux GUI and shared by all
+three tools:
+
+```
+tools/states/SLUS01411.sstate1    in-game start menu
+tools/states/SLUS01411.sstate2    name input screen
+tools/states/SLUS01411.sstate3    first duel deck build menu
+tools/states/SLUS01411.sstate4    in a duel          <- the acceptance target
+```
+
+They are needed because the boot path never reaches a duel on its own, and no
+controller input is scripted. To capture them, open `build/ygofm.bin` in the
+Redux GUI with the real BIOS, play to each point, and use *File → Save state
+slots → Save slot N*.
+
+Redux resolves slot filenames against its **persistent directory**, not the
+working directory, so they land in `%APPDATA%\pcsx-redux\` — the same place it
+keeps `memcard1.mcd`. Copy them into `tools/states/` afterwards:
+
+```bash
+copy "%APPDATA%\pcsx-redux\SLUS01411.sstate*" tools\states\
+```
+
+Restoring never happens during BIOS init — the tools boot for a warmup period
+first, because loading a state while the kernel is still setting up leaves the
+emulator with nothing running and no further Vsync ever arrives.
+
+### Measuring what a restored state actually runs
+
+A restored state with no controller input runs the game's **idle loop**, so the
+duel's real logic never executes. `tools/pad.lua` scripts input to get past that;
+pass `--pad` to `trace.py` or `sample.py`.
+
+Two traps are worth stating, because both produce confident-looking nonsense:
+
+* **Sampling aliases.** `sample.py` samples once per Vsync, always at the same
+  phase of the frame, so a 16-instruction wait-spin takes ~98.8% of samples
+  whether or not input is being driven. It is a hotness ranking, not coverage,
+  and it cannot tell you whether input changed anything. Use `trace.py`, where a
+  function is either hit or not.
+* **Arming every breakpoint at once does not finish.** All 1206 cost ~4–10 s per
+  frame under the interpreter — and the interpreter is the only mode that
+  observes breakpoints at all. `--batch N` arms N per pass, sweeps the game in
+  several passes and merges the hits, which is affordable because a save state
+  skips the boot.
 
 ## Toolchain
 
@@ -234,6 +306,7 @@ Three tools are git submodules:
 | `tools/maspsx` | [gonzaloberteri/maspsx](https://github.com/gonzaloberteri/maspsx), branch `extern-small-data-nop` |
 | `tools/asm-differ` | [simonlindholm/asm-differ](https://github.com/simonlindholm/asm-differ), upstream |
 | `tools/m2c` | [matt-kempster/m2c](https://github.com/matt-kempster/m2c), upstream |
+| `tools/permuter` | [gonzaloberteri/decomp-permuter](https://github.com/gonzaloberteri/decomp-permuter) |
 
 The maspsx fork carries one patch, and it is load-bearing. Upstream learns
 which symbols live in the small-data area only from `.sdata` blocks and
@@ -253,6 +326,7 @@ reasons rather than source reasons. The patch honours the size operand of
 |---|---|
 | `all.py` | run the whole pipeline |
 | `extract_disc.py` | pull the 9 files out of the MODE2/2352 image, record SHA-1 baselines |
+| `stage_iso.py` | stage `iso/` and the LBA-pinned `config/disc.xml` with dumpsxiso |
 | `find_boundary.py` | locate `.text`/`.data` in the flat payload by structural scoring |
 | `map_regions.py` | classify every 1 KB window as code / data / zero |
 | `gen_splat_config.py` | emit `config/splat.yaml` from the region map |
@@ -260,9 +334,10 @@ reasons rather than source reasons. The patch honours the size operand of
 | `split_asm.py` | carve the disassembly around functions that now exist in C |
 | `split_funcs.py` | find functions the disassembly merged, and emit labels to split them |
 | `make_iso.py` | rebuild the disc image with the original LBAs |
-| `verify_boot.py` | hash gate plus a DuckStation smoke test from a save state |
-| `trace.py` | breakpoint coverage under PCSX-Redux, optionally from a save state |
+| `verify_boot.py` | hash gate plus a PCSX-Redux smoke test from a save state |
+| `trace.py` | breakpoint coverage under PCSX-Redux, optionally from a save state; `--batch N` sweeps in cheap passes and merges |
 | `sample.py` | PC-sampled hotness ranking, optionally from a save state |
+| `pad.lua` | scripted controller input, so a restored state runs real logic instead of its idle loop (`--pad` on either tool) |
 | `cc.py` | compile one C file the way the original build did |
 | `match.py` | compare a compiled file against the original, per function |
 | `flagsweep.py` | search the flag space for what makes a file match |
@@ -270,6 +345,8 @@ reasons rather than source reasons. The patch honours the size operand of
 | `psyq_lib.py` | native `LIB`/`LNK` archive reader, for 4.6's unconverted libraries |
 | `psyq_residual.py` | account for every unmatched byte of the SDK region; compare releases |
 | `gen_context.py` | build a Psy-Q type/signature context for m2c |
+| `ghidra_import.py` | import `SLUS_014.11` into Ghidra at `0x80010000` with our function names |
+| `ghidra_decomp.py` | decompile one function out of that project, for type/struct recovery |
 | `autodecomp.py` | run m2c → compile → compare unattended, keep what matches |
 | `funcs.py` | function inventory and candidate selection |
 | `progress_map.py` | render `progress.png` (deterministic — no timestamps, everything sorted) |
@@ -321,9 +398,12 @@ address; the `$gp` hardware-state words need `volatile`.
   overstates sizes and understates the function count wherever they have not
   been split out.
 * **The boot test is a smoke test, not a frame comparison.** It loads an
-  in-duel save state on the rebuilt image and checks the emulator stays up. That
-  is sufficient while the build is byte-identical, and becomes load-bearing only
-  when a function is ever accepted as equivalent-but-not-identical.
+  in-duel save state on the rebuilt image and checks that the game keeps
+  delivering Vsyncs. That is sufficient while the build is byte-identical, and
+  becomes load-bearing only when a function is ever accepted as
+  equivalent-but-not-identical. It counts frames rather than checking that the
+  process is alive, because a hung emulator stays alive — the DuckStation
+  version of this check would have passed a black screen.
 * **Unedited m2c output is exhausted.** Widening the candidate pool from 80 to
   250 instructions and sweeping six flag combinations bought exactly one extra
   function. `size-differs` is ~49% of failures, which is per-function structure

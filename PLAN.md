@@ -1880,3 +1880,153 @@ produce the `0x2AAAAAAB` magic multiply, and the original contains exactly that.
 That is the same rule as `func_8005F1B8` seen positively — there the original has
 a real `div`, so the divisor cannot have been a literal; here it has the magic
 multiply, so it must have been.
+
+### 2026-07-25 — the sound-driver blocker is two problems, and the big one is ordinary
+
+The entry above treats the nine blocked functions as one idiom. Counting calls in
+each says they are not. Splitting them by whether the function contains a call at
+all (`jal`/`jalr` in `asm/code_002800.s`):
+
+| group | functions | instructions |
+|---|---|---|
+| blocked, **contains calls** | `func_8004ADE8` 355, `func_8004C114` 195, `func_8004AAFC` 122, `func_8004C8C8` 102, `func_8004B374` 74, `func_8004B734` 72, `func_8004A43C` 55 | **975** |
+| blocked, **no calls at all** | `func_8004A0FC` 96, `func_8004C84C` 31 | **127** |
+
+975 + 127 = 1,102, which reconciles exactly with the figure above, so the split
+covers the whole class.
+
+**For the 975, the reload needs no special explanation.** A call may modify any
+global, so C that names `D_8009B458` *directly* at each use must reload it after
+every call — GCC has no choice. C that first copies it into a local pointer
+gets the opposite: the local lives in a callee-saved register across the call and
+is never reloaded. That is precisely the observed behaviour, and it means the
+hoist is a property of the *source shape we wrote*, not of a missing flag.
+
+The flag sweep in the entry above cannot have found this, because no `-f` option
+changes it: both forms are correct C and GCC compiles each faithfully.
+
+So the thing to try for those seven is the one source shape not yet listed as
+tried — reference the global at each use rather than binding it to a local:
+
+```c
+/* hoists: w is a local, kept in a saved register across the calls */
+SoundWork *w = g_sound;
+while (...) { w->a = 1; some_call(); w->b = 2; }
+
+/* reloads: nothing survives the call, so it is re-read each iteration */
+while (...) { g_sound->a = 1; some_call(); g_sound->b = 2; }
+```
+
+Note this predicts the *reload*, not the whole function; the near-misses may have
+other residuals on top.
+
+**The 127 are the genuine mystery** and are what the original entry's aliasing
+argument actually describes: with no call in the function, only stores sit
+between the reloads, so nothing forces GCC's hand and `loop.c`/`gcse.c` is the
+right place to look. `func_8004C84C` — already 1 instruction short, and that one
+instruction is the reload — is the cheapest test case in the project.
+
+#### Verified against CC1PSX, not argued
+
+Compiled with the project's own toolchain (`tools/cc.py`, GCC 2.95.2, `-O2`),
+two functions differing only in whether the pointer is bound to a local, each
+with a call in the loop. The whole test, reproduced here because `build/` is
+gitignored:
+
+```c
+/* decomp-flags: opt=-O2 as_G=8 */
+#include "types.h"
+typedef struct { u8 pad[0x520]; } SoundWork;
+extern SoundWork *g_snd;
+extern void some_call(void);
+
+void hoist_local(void) {              /* A: bound to a local */
+    SoundWork *w = g_snd;
+    s32 i;
+    for (i = 0; i < 8; i++) { w->pad[0x508]++; some_call(); w->pad[0x501] = 1; }
+}
+
+void hoist_global(void) {             /* B: named at each use */
+    s32 i;
+    for (i = 0; i < 8; i++) { g_snd->pad[0x508]++; some_call(); g_snd->pad[0x501] = 1; }
+}
+```
+
+`opt=-O2 as_G=8`, pointer bound to a local — one load, before the loop, in a
+callee-saved register that survives the call:
+
+```
+   8:  lw   s0,0(gp)          <- once, outside
+  20:  lbu  v0,1288(s0)       <- loop body reuses s0
+  2c:  jal  some_call
+```
+
+Same flags, global named at each use — reloaded, including after the call:
+
+```
+  6c:  lw   v0,0(gp)          <- inside the loop (branch target)
+  80:  jal  some_call
+  88:  lw   v0,0(gp)          <- reloaded, v0 did not survive
+  90:  bgez s0,6c
+```
+
+And with `cc1_G=8`, which selects the assembler-macro form, the global-direct
+shape emits **a fresh `lui %hi / lw %lo` pair on every iteration** — the exact
+idiom this entry set out to explain:
+
+```
+  70:  lui  v0,0x0            <- branch target
+  74:  lw   v0,0(v0)
+  88:  jal  some_call
+  90:  lui  v0,0x0            <- fresh pair after the call
+  94:  lw   v0,0(v0)
+  9c:  bgez s0,70
+```
+
+So the recipe for the seven call-containing functions is **`cc1_G=8` plus naming
+the global at each use rather than binding it to a local**. No `-f` flag is
+involved, which is why the sweep could not find it: both shapes are correct C
+and GCC compiles each faithfully.
+
+The 127 instructions in the two call-free functions are *not* covered by this —
+with no call, nothing forces the reload, and that remains open.
+
+Still to do: this proves the idiom reproduces, not that any particular function
+matches. None of the seven has been through `tools/match.py` on this shape yet.
+
+#### func_8004A43C: 54 of 55 instructions on the first attempt with the reload recipe
+
+Parked in `build/rejected/func_8004A43C.c`. This is the first test of the recipe
+above on a real function, and the recipe itself works: naming `D_8009B458` at
+each use with `cc1_G=8` produced **all three `lui %hi / lw %lo` reloads in the
+right places**, including both post-call ones. The hoist problem does not appear.
+
+Flags: `opt=-O2 as_G=0 cc1_G=8`. `as_G=0` because the original addresses
+`D_8009B458` with `%hi/%lo` rather than gp-relative.
+
+The whole residual is **one instruction**, and it is scheduling, not structure:
+
+```
+        original                          ours
+  4     lbu   $v1, 0x3($s0)               lbu   v1,3(s0)
+  5     nop                       <---    lui   a0,0x0      <-- fills the slot
+  6     sll   $v0, $v1, 1                 lw    a0,0(a0)
+  ...
+  8     lui   $v1, %hi(D_8009B458)        sll   v0,v1,0x1
+  9     lw    $v1, %lo(D_8009B458)($v1)   addu  v0,v0,v1
+```
+
+The original computes `unk_03 * 0x18` first and loads `D_8009B458` afterwards,
+leaving a load-delay `nop` after the `lbu` that nothing could fill. Ours
+schedules the pointer load into that slot, so we are one instruction shorter and
+everything after shifts by one. Every other instruction, including operand
+registers, lines up.
+
+`tools/flagsweep.py` was run over all 105 combinations and none matched, so this
+is a source-shape or scheduling question, not a flag.
+
+Also recorded: `SoundWork+0x4C0` is confirmed `SpuVoiceAttr` — `mask = 0x10`
+(`SPU_VOICE_PITCH`) is stored at `+0x4C4` and the `func_80049FB4` result at
+`+0x4D4`, i.e. `attr.pitch` at attr+0x14, which is where libspu puts it. The
+`0x10` is materialised once and used both as the stored mask and as the `sllv`
+shift amount, which is why the shift is register-form rather than `sll ..,16`.

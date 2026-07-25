@@ -5,7 +5,7 @@ Paste everything below the line into a fresh agent session.
 ---
 
 You are continuing a matching decompilation of **Yu-Gi-Oh! Forbidden Memories**
-(PlayStation, NTSC-U, `SLUS-01411`) at `C:\Users\PC\Downloads\ygofm-decomp`.
+(PlayStation, NTSC-U, `SLUS-01411`) at `C:\ygofm-decomp`.
 
 **Work unattended. Do not ask questions — decide and proceed.** When a goal is
 met, pick the next one yourself from the queue below or create a better one, and
@@ -37,10 +37,41 @@ to the same bytes or it is rejected. There is no "looks correct".
 **A non-matching file in `src/` is not harmless work-in-progress — it silently
 replaces correct assembly with wrong code.** Never commit one.
 
+## Machines
+
+- **This one — `.180`, DESKTOP-9USQDG9, 16 cores.** Everything is set up here.
+  Do the interactive work here: matching, emulator runs, Ghidra.
+- **`.209`, DESKTOP-G51OOOE — measured: i5-4460, 4 logical cores, 16 GB,
+  433 GB free, Windows 10 Pro.** Passwordless SSH both directions as user `pc`,
+  default shell PowerShell: `ssh -o BatchMode=yes pc@192.168.0.209`.
+
+  **Be realistic about it.** Four Haswell cores against this box's sixteen, so
+  it is worth roughly a fifth of the local machine and only for work that runs
+  unattended for a long time. It is Windows, which is the one thing that makes
+  it usable at all — the Psy-Q tools are 32-bit PE.
+
+  **It is not set up.** Measured: `git` present, **Python missing**, no repo.
+  `tools/bin/` and `.venv/` are gitignored, so a clone gets no toolchain at all
+  — Python, the venv, binutils, mkpsxiso and Psy-Q all have to be installed
+  there first. That is a real cost; do it only when there is a queue of batch
+  work big enough to repay it, and script it rather than doing it by hand.
+
+  When it is set up, give it *batch* work and never the interactive loop:
+  `tools/flagsweep.py` and `tools/permute.py` over functions parked in
+  `build/rejected/`. Both are pure CPU and need no emulator, no disc image and
+  no save states — which is why they port cleanly. Use `--jobs 3`, leaving a
+  core: `permute.py --jobs 14` reached 88 processes and 1.2 GB on a 16-core box,
+  so 4 cores will thrash long before that. Copy results back and re-verify with
+  `tools/match.py` here; **never trust a match that was not re-checked on
+  `.180`.**
+
 ## Environment
 
 - **Windows-native.** The Psy-Q tools are 32-bit PE and run under WOW64. There is
   no WSL distro and installing one is out of scope.
+- **Leftover emulators lock `build/ygofm.bin`** and break `make_iso.py`. They do
+  not always answer to `pcsx-redux` — look for **`pcsx-redux.main`** too. Kill
+  strays before a full `all.py`.
 - Python is `.venv/Scripts/python.exe` (call it `PY`). Bare `python` on PATH is
   the Microsoft Store stub and does not work.
 - Run every command from the repo root. Several tools resolve paths relative to it.
@@ -61,8 +92,10 @@ PY tools/autodecomp.py --all --max-insns 250 --jobs 16
 PY tools/permute.py func_XXXXXXXX --run   # decomp-permuter, for register diffs
 PY tools/funcs.py --candidates       # pick targets
 PY tools/sample.py --state 4        # hotness ranking from the in-duel state
+PY tools/sample.py --state 4 --pad  # ...with the controller driven, for real logic
 PY tools/sample.py --report         # reprint the last ranking
-PY tools/trace.py --state 4         # breakpoint coverage (slow: ~4 s/frame)
+PY tools/trace.py --state 4         # breakpoint coverage (slow: ~4-10 s/frame)
+PY tools/trace.py --state 4 --pad --batch 200   # coverage that actually finishes
 PY tools/sidebyside.py src/manual/X.c   # our output aligned against the original
 ```
 
@@ -113,7 +146,23 @@ same ones independently, which was wasted effort.
    four workers averaged ~12–20 matches each. The technique that actually works is
    disassembling your own object with `mipsel-none-elf-objdump -d` and reading it
    beside `asm/code_002800.s` — not sweeping flags blind.
-2. **Unblock the sound driver: why does the original reload `D_8009B458`?**
+2. **Unblock the sound driver — but read the 2026-07-25 split in PLAN.md first.**
+   Counting calls in the nine blocked functions says this is **two** problems,
+   not one. Seven of them (975 of the 1,102 instructions) contain calls, and for
+   those the reload is ordinary C: a call may clobber a global, so naming
+   `D_8009B458` directly at each use forces a re-read, while binding it to a
+   local keeps it in a saved register across the call. No `-f` flag changes
+   that, which is why the sweep below found nothing.
+
+   **This is verified against CC1PSX, not argued.** `cc1_G=8` plus naming the
+   global at each use emits a fresh `lui %hi / lw %lo` pair every iteration —
+   the exact idiom. See the disassembly in PLAN.md and
+   `build/scratch/hoist_test.c`. **Start the seven there.** Only `func_8004A0FC` (96)
+   and `func_8004C84C` (31) have no calls at all, and those two are what the
+   aliasing argument below actually describes. `func_8004C84C` is 1 instruction
+   short and that instruction is the reload — the cheapest test case there is.
+
+   The original framing, still accurate for those two:
    This is the highest-leverage unknown in the project. Nine of the eleven
    evidence-backed duel targets reload that pointer from memory *inside* their
    loops; GCC 2.95.2 hoists the load out under everything tried (all three
@@ -130,11 +179,37 @@ same ones independently, which was wasted effort.
    exact length and instruction sequence, 53 words differing on registers).
    `PY tools/sample.py --state 4 --report` reprints the ranking.
 
-4. **Pad input under Lua, to reach real duel logic.** Today's duel coverage is
-   the *idle* loop -- no controller input is supplied, so it is the sound
-   driver and the per-frame render path. Summon, attack and fusion logic are
-   still unmeasured. Driving the pad from `tools/sample.lua` is the cheapest way
-   into the code this project most wants to read.
+4. **Reach real duel logic. The pad driver works; save state 4 is the problem.**
+   `tools/pad.lua` scripts controller input, wired into `sample.py` and
+   `trace.py` as `--pad`. **Do not re-derive the following — it is measured**,
+   batched coverage, 150 frames, same parameters throughout:
+
+   | state | without `--pad` | with `--pad` | only with `--pad` |
+   |---|---|---|---|
+   | 3, deck build menu | 57 functions | **109** | **52 fn / 2,809 insns** |
+   | 4, in a duel (first capture) | 125 functions | 125 | **0** |
+   | 4, **recaptured** | 63 functions | **118** | **55 fn / 4,406 insns** |
+
+   The first state 4 was captured at a non-interactive moment and was completely
+   unmoved by input — which briefly looked like the driver being broken. It was
+   not: recapturing at a point where the game is actually waiting on the player
+   changed it from 0 to 4,406 instructions of input-dependent code.
+
+   **Capture states where the game is waiting on input**, and confirm with the
+   diff above before drawing conclusions from any of them.
+
+   The recapture also reaches **40 functions no earlier run had ever executed**
+   (5,250 instructions), among them `func_8001BD88` (1,326 insns),
+   `func_80019D18` (1,261) and `func_80035E20` (875) — far larger than anything
+   in the sound cluster, and evidence-backed as duel-path. These are new
+   decompilation targets; `tools/funcs.py --candidates` does not know about them.
+
+   Two traps, both of which produced a wrong conclusion here first:
+   * `sample.py` cannot settle this and never could: it samples once per Vsync,
+     always at the same phase, so a 16-instruction spin takes ~98.8% of samples
+     either way. That is aliasing. Use `trace.py --pad --batch`, diff hit sets.
+   * A single negative state is not a negative result. State 4 alone said "input
+     does nothing"; state 3 disproved it in one run.
 
 5. **The register-allocation class.** Parked in `build/rejected/`, all with
    correct structure: `func_8005F1B8` (3/49), `func_80018C34` (4/49),
@@ -143,11 +218,17 @@ same ones independently, which was wasted effort.
    10 on this class and **some of its winning variants are semantically wrong**,
    so read anything it produces before using it.
 
-6. **`func_8004B734` is 71 of 72 and is a different problem.** The single
-   residual is a delay slot: the original leaves `nop` in the loop-back branch
-   and materialises the return value after it, where GCC hoists the zeroing into
-   the slot. The permuter cannot help -- no rewriting of C adds a `nop`.
-   `reorg.c` is the place to look.
+6. **The delay-slot class: `func_8004B734` (71 of 72) and now `func_8004A43C`
+   (54 of 55).** Both residuals are a single `nop` the original has and we do
+   not. `func_8004B734`: the original leaves `nop` in the loop-back branch and
+   materialises the return value after it, where GCC hoists the zeroing into the
+   slot. `func_8004A43C`: the original leaves a load-delay `nop` after
+   `lbu $v1,0x3($s0)`, where GCC schedules the `D_8009B458` load into it — see
+   PLAN.md for the aligned listing. **The permuter cannot help — no rewriting of
+   C adds a `nop`**, confirmed here: it was run over `func_8004A43C` and
+   plateaued at score 500, against 0 for a match. `flagsweep.py` over all 105
+   combinations also found nothing. `reorg.c` is the place to look, and one
+   answer probably resolves both.
 
 7. **`include/game.h`** has 17 machine-checked structs, plus `SoundVoice.unk_1E`
    and `SoundWork.unk_50C` as a function pointer. New work should use it. **Do
@@ -167,8 +248,42 @@ same ones independently, which was wasted effort.
 * **Division by a literal is unmatchable by construction.** GCC 2.95.2
   strength-reduces it at every `-O` level. A real `div` on a constant proves the
   source named the divisor in a *variable*, declared at its point of use.
-* **The duel save states exist**, in `tools/states/` (gitignored). This was the
-  item marked "needs a human".
+* **The duel save states exist**, in `tools/states/` (gitignored), and they are
+  **PCSX-Redux** states, not DuckStation's. All four slots restore and pass the
+  boot gate. This was the item marked "needs a human"; it is done.
+* **Everything that runs the game is now PCSX-Redux.** `verify_boot.py` used to
+  drive DuckStation with its own incompatible state format; it was ported, so
+  there is one emulator and one set of states. It also counts Vsyncs delivered
+  after the restore rather than checking the process is alive — the old check
+  would have passed a black screen.
+* **`tools/trace.lua` was removing each breakpoint from inside its own callback**,
+  freeing it while Redux was still dispatching it. That corrupted the heap and
+  killed the emulator (`0xC0000374`) the moment game code started, so *every*
+  trace silently reported `0 of 1206`. Removal is now deferred to the Vsync
+  handler. A boot trace reports 108 functions. `TRACE_NO_REMOVE=1` disables
+  removal entirely if it is ever suspect again.
+* **`tools/all.py` never staged `iso/` or `config/disc.xml`**, so a fresh clone
+  died at `make_iso.py`. `tools/stage_iso.py` does it and is in the pipeline.
+* **A leftover emulator locks `build/ygofm.bin`** and made mkpsxiso fail with
+  nothing but "Cannot open or create output image file". `make_iso.py` now names
+  the cause. Note the process does not always still answer to its own name —
+  finding it took the Restart Manager API.
+* **`tools/ref/gcc-2.95.2/`** is populated (gitignored), so `loop.c`, `gcse.c`,
+  `reorg.c` and `local-alloc.c` are on disk for queue items 2 and 6.
+* **Ghidra is set up**, with its own JDK, both gitignored under `tools/bin/`.
+  `tools/ghidra_import.py --analyze` builds the project at the real base
+  `0x80010000` with all 1206 of our names on it; `tools/ghidra_decomp.py NAME`
+  prints one function. It is **not** a second source of code — its C does not
+  recompile to the same bytes — it is for the `size-differs` class: struct
+  layout, field widths, signedness.
+  First result, on `func_8004B734`: it renders the `D_8009B458` struct as
+  offsets `0x500`, `0x501`, `0x508`, `0x509`, `0x50c`, `0x814`, and confirms
+  **`0x50c` is a function pointer that is called inside the loop** — which
+  item 7 had only marked as a guess. Note for item 2: this particular loop also
+  contains three ordinary calls, and a call may clobber a global, so a reload
+  here needs no special explanation. **Before assuming that answers item 2,
+  check whether the actually-blocked functions contain calls at all** — PLAN's
+  reasoning for the hoist is that only a *store* sits between reloads.
 * **The register-allocation wall is explained.** `local-alloc.c` widens a
   quantity's lifetime to avoid reusing a just-dead register, gated on
   `flag_schedule_insns_after_reload && !optimize_size`. So there are **three**
@@ -177,6 +292,13 @@ same ones independently, which was wasted effort.
 * **`tools/permute.py` was broken** -- it passed neither `cc1_G` nor
   `expand_div`, so anything not passed fell back to defaults. Base scores from
   before that fix are meaningless.
+* **The permuter could not start at all on a fresh checkout**, and both causes
+  were environmental rather than in the fork. `toml` was missing from the pip
+  list (added to the README). And the permuter preprocesses with a bare `cpp`,
+  which our gcc build only ships as `mipsel-none-elf-cpp` -- `tools/bin` is
+  gitignored, so whatever alias existed locally was never reproducible.
+  `permute.py` now creates the `cpp` alias itself, and puts Git's `bash` on PATH
+  for the fork's `.sh` shim, which Windows cannot exec directly.
 * **`tools/sidebyside.py` exists** for when `match.py` can only say the size is
   wrong. Use it rather than hand-rolling an objdump comparison (and note
   `objdump` hides `nop`s without `-z`).
@@ -206,9 +328,11 @@ same ones independently, which was wasted effort.
 
 ## Needs a human, do not try to work around
 
-Duel-path execution coverage needs a **PCSX-Redux save state** at a duel;
-DuckStation's format is not portable and the existing slots 1–4 are DuckStation's.
-Note it and move on.
+Nothing right now. The one item that was here — a PCSX-Redux save state at a duel
+— has been done; see "Resolved since the last handoff".
+
+If you find something that genuinely needs a human, put it here rather than
+working around it, and say what you tried.
 
 ## Definition of done
 
