@@ -41,6 +41,16 @@ local function log(msg)
     PCSX.log('[trace] ' .. msg)
 end
 
+-- Addresses whose breakpoint has been hit and is due to be removed.  Removal is
+-- deferred rather than done in the callback: calling removeBreakpoint on the
+-- breakpoint currently being dispatched frees it while Redux is still using it,
+-- which corrupts the heap and takes the emulator down with STATUS_HEAP_CORRUPTION
+-- (0xC0000374) on the very first hit -- that is, the moment game code starts.
+-- The symptom was a trace that always reported 0 of 1206 functions, because the
+-- process died just after the BIOS printed "Execute !".
+local pending = {}
+local npending = 0
+
 -- Must return false, or the emulator pauses on every hit and never advances.
 local shared_cb = ffi.cast('bool (*)(uint32_t, unsigned, const char*)',
     function(address, _width, _cause)
@@ -49,14 +59,39 @@ local shared_cb = ffi.cast('bool (*)(uint32_t, unsigned, const char*)',
             hits[a] = frames
             order[#order + 1] = a
             nhits = nhits + 1
-            local h = handles[a]
-            if h ~= nil then
-                C.removeBreakpoint(h)      -- coverage is a set; once is enough
-                handles[a] = nil
-            end
+            npending = npending + 1
+            pending[npending] = a          -- coverage is a set; once is enough
         end
         return false
     end)
+
+-- Drained from the Vsync handler, which is outside breakpoint dispatch and so is
+-- a safe point to free them.  Still worth doing: under the interpreter every
+-- armed breakpoint costs time on every instruction, so dropping the ones already
+-- recorded is what keeps a long trace from slowing to a crawl.
+-- TRACE_NO_REMOVE=1 leaves every breakpoint armed for the whole run.  Slower in
+-- principle, but removal is the part of this script that has twice taken the
+-- emulator down, so it is worth being able to turn off without editing code.
+local noRemove = os.getenv('TRACE_NO_REMOVE') == '1'
+
+local function drainPending()
+    if noRemove then
+        for i = 1, npending do pending[i] = nil end
+        npending = 0
+        return
+    end
+    if npending == 0 then return end
+    for i = 1, npending do
+        local a = pending[i]
+        local h = handles[a]
+        if h ~= nil then
+            C.removeBreakpoint(h)
+            handles[a] = nil
+        end
+        pending[i] = nil
+    end
+    npending = 0
+end
 
 -- Checkpointed, not written once at the end.  Under the interpreter with every
 -- function breakpointed a frame costs seconds, so a run that overshoots its
@@ -81,16 +116,27 @@ local function writeResults(reason)
                       reason, nhits, nfuncs, frames))
 end
 
+-- Arming all 1206 at once costs ~4-10 s/frame under the interpreter, which is
+-- what makes a whole-game trace impractical.  TRACE_BATCH_LO/HI arm only a slice
+-- of the list, so tools/trace.py can sweep the game in several cheap passes and
+-- merge the results.  1-based and inclusive; unset means the whole list.
+local batchLo = tonumber(os.getenv('TRACE_BATCH_LO'))
+local batchHi = tonumber(os.getenv('TRACE_BATCH_HI'))
+
 local function armBreakpoints()
     local f = io.open(FUNCS_IN, 'r')
     if not f then
         log('missing ' .. FUNCS_IN .. ' -- run tools/trace.py, not this directly')
         return false
     end
+    local n = 0
     for line in f:lines() do
         local hex = line:match('^%s*([0-9A-Fa-f]+)')
         if hex then
-            local addr = tonumber(hex, 16)
+            n = n + 1
+            local inBatch = (batchLo == nil or n >= batchLo)
+                            and (batchHi == nil or n <= batchHi)
+            local addr = inBatch and tonumber(hex, 16) or nil
             if addr and not handles[addr] then
                 handles[addr] = C.addBreakpoint(addr, BP_EXEC, 4, 'trace',
                                                 shared_cb, 'trace')
@@ -99,8 +145,12 @@ local function armBreakpoints()
         end
     end
     f:close()
-    log(string.format('armed %d execution breakpoints with one shared callback',
-                      nfuncs))
+    log(string.format('armed %d of %d execution breakpoints%s',
+                      nfuncs, n,
+                      (batchLo or batchHi)
+                        and string.format(' (batch %d..%d)', batchLo or 1,
+                                          batchHi or n)
+                        or ''))
     return nfuncs > 0
 end
 
@@ -150,6 +200,7 @@ else
     end
     PCSX.Events.createEventListener('GPU::Vsync', function()
         frames = frames + 1
+        drainPending()
 
         if phase == 'boot' then
             if frames >= warmup then

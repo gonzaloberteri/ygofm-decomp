@@ -91,6 +91,16 @@ def main():
     ap.add_argument("--timeout", type=int, default=1800)
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--pad", nargs="?", const="", default=None,
+                    metavar="SCRIPT",
+                    help="drive the controller from tools/pad.lua, so a restored "
+                         "state runs real logic instead of its idle loop; "
+                         "optionally a comma-separated button list "
+                         "(default: down,cross,right,cross,up,cross,left,cross)")
+    ap.add_argument("--pad-hold", type=int, default=4,
+                    help="frames to hold each button")
+    ap.add_argument("--pad-gap", type=int, default=8,
+                    help="frames released between buttons")
     args = ap.parse_args()
 
     out = os.path.join(WORK, args.out) if args.out else SAMPLES_TXT
@@ -125,6 +135,19 @@ def main():
            "-bios", BIOS, "-iso", IMAGE,
            "-dofile", os.path.join("tools", "sample.lua"),
            "-logfile", os.path.join("build", "trace", "sample.log")]
+
+    if args.pad is not None:
+        # pad.lua counts absolute Vsyncs and cannot see sample.lua's phases, so
+        # it is told when to start.  A few frames after the restore, not on it:
+        # the first frames back are the game reacting to the load.
+        env["PAD_START"] = str((args.warmup + 30) if args.state else 30)
+        env["PAD_HOLD"] = str(args.pad_hold)
+        env["PAD_GAP"] = str(args.pad_gap)
+        if args.pad:
+            env["PAD_SCRIPT"] = args.pad
+        at = cmd.index("-logfile")
+        cmd[at:at] = ["-dofile", os.path.join("tools", "pad.lua")]
+        print("  driving the controller from tools/pad.lua")
     # stdin must stay open: with -no-ui the TUI reads stdin, and an immediate EOF
     # makes it quit before the game runs at all.
     proc = subprocess.Popen(cmd, cwd=REPO, stdin=subprocess.PIPE, env=env)

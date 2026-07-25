@@ -106,6 +106,16 @@ def main():
     ap.add_argument("--out", default=None,
                     help="write hits to this file instead of hits.txt, so "
                          "several traces can be kept side by side")
+    ap.add_argument("--batch", type=int, default=0, metavar="N",
+                    help="arm only N breakpoints per pass and sweep the game in "
+                         "several passes, merging the hits. All 1206 at once "
+                         "costs ~4-10 s/frame under the interpreter, which is "
+                         "what makes a whole-game trace impractical")
+    ap.add_argument("--pad", nargs="?", const="", default=None, metavar="SCRIPT",
+                    help="drive the controller from tools/pad.lua, so a restored "
+                         "state runs real logic instead of its idle loop")
+    ap.add_argument("--pad-hold", type=int, default=4)
+    ap.add_argument("--pad-gap", type=int, default=8)
     args = ap.parse_args()
 
     global HITS_TXT
@@ -142,17 +152,66 @@ def main():
               % (args.frames, args.state, SLOT_NAMES[args.state]))
     else:
         print("tracing %d frames from boot..." % args.frames)
-    # stdin must stay open: with -no-ui the TUI reads stdin, and an immediate EOF
-    # makes it quit before the game runs at all. That looked exactly like the Lua
-    # script failing.
-    proc = subprocess.Popen(cmd, cwd=REPO, stdin=subprocess.PIPE, env=env)
-    try:
-        proc.wait(timeout=args.timeout)
-    except subprocess.TimeoutExpired:
-        print("emulator hit the %ds timeout; killing it" % args.timeout)
-        proc.kill()
-        proc.wait(timeout=30)
 
+    if args.pad is not None:
+        # pad.lua counts absolute Vsyncs and cannot see trace.lua's phases, so it
+        # is told when to start: after the warmup boot and the settle window.
+        warmup = int(os.environ.get("TRACE_WARMUP", "120"))
+        env["PAD_START"] = str((warmup + 30) if args.state else 30)
+        env["PAD_HOLD"] = str(args.pad_hold)
+        env["PAD_GAP"] = str(args.pad_gap)
+        if args.pad:
+            env["PAD_SCRIPT"] = args.pad
+        at = cmd.index("-logfile")
+        cmd[at:at] = ["-dofile", os.path.join("tools", "pad.lua")]
+        print("  driving the controller from tools/pad.lua")
+
+    def run(extra_env, hits_path):
+        e = dict(env, TRACE_HITS=hits_path)
+        e.update(extra_env)
+        # stdin must stay open: with -no-ui the TUI reads stdin, and an immediate
+        # EOF makes it quit before the game runs at all. That looked exactly like
+        # the Lua script failing.
+        proc = subprocess.Popen(cmd, cwd=REPO, stdin=subprocess.PIPE, env=e)
+        try:
+            proc.wait(timeout=args.timeout)
+        except subprocess.TimeoutExpired:
+            print("  emulator hit the %ds timeout; killing it" % args.timeout)
+            proc.kill()
+            proc.wait(timeout=30)
+
+    if args.batch <= 0:
+        run({}, HITS_TXT)
+        return report(index)
+
+    total = len(index)
+    merged = {}
+    for lo in range(1, total + 1, args.batch):
+        hi = min(lo + args.batch - 1, total)
+        part = os.path.join(WORK, "hits_batch_%04d.txt" % lo)
+        print("  batch %d..%d of %d" % (lo, hi, total))
+        run({"TRACE_BATCH_LO": str(lo), "TRACE_BATCH_HI": str(hi)}, part)
+        if not os.path.exists(part):
+            print("    no results for this batch")
+            continue
+        for line in open(part):
+            if line.startswith("#"):
+                continue
+            bits = line.split()
+            if len(bits) >= 2:
+                addr, frame = int(bits[0], 16), int(bits[1])
+                # Keep the earliest frame: a function reached in two batches was
+                # reached at whichever came first.
+                if addr not in merged or frame < merged[addr]:
+                    merged[addr] = frame
+
+    with open(HITS_TXT, "w") as fp:
+        fp.write("# reason=batched frames=%d hit=%d of=%d batch=%d\n"
+                 % (args.frames, len(merged), total, args.batch))
+        for addr in sorted(merged):
+            fp.write("%08X %d\n" % (addr, merged[addr]))
+    print("\nmerged %d batches -> %d functions hit" % (
+        (total + args.batch - 1) // args.batch, len(merged)))
     return report(index)
 
 
