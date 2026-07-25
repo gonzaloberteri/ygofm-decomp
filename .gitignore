@@ -26,3 +26,9 @@ tools/ref/
 tools/bin/redux/
 debug_source.c
 debug_compiled_object.o
+
+# PCSX-Redux droppings and save states.  The states contain game RAM, so they
+# are yours to make and not ours to distribute; tools/states/ is where the
+# tracer looks for them.
+.sentry-native/
+tools/states/

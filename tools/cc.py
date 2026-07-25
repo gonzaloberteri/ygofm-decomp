@@ -92,7 +92,7 @@ def run(cmd, **kw):
     return r
 
 
-def compile_c(src, obj, extra_flags=(), as_g=None):
+def compile_c(src, obj, extra_flags=(), as_g=None, expand_div=None):
     tmp = obj + ".i"
     asm = obj + ".s"
     os.makedirs(os.path.dirname(obj) or ".", exist_ok=True)
@@ -107,6 +107,8 @@ def compile_c(src, obj, extra_flags=(), as_g=None):
     fl = flags_for(src)
     if as_g is not None:
         fl["as_G"] = as_g
+    if expand_div is not None:
+        fl["expand_div"] = expand_div
     # `opt` may carry several tokens, comma separated: part of the binary was
     # built with no -O at all, so `opt=-O0,-fomit-frame-pointer` must be sayable.
     opt_flags = [t for t in str(fl["opt"]).split(",") if t]
@@ -117,10 +119,11 @@ def compile_c(src, obj, extra_flags=(), as_g=None):
     # scheduler hoisting `lw $ra` above trailing stores.  That is reachable only
     # by naming the pass, e.g. cc1_extra=-fno-schedule-insns2.
     cc1_flags += list(fl.get("cc1_extra", []))
-    # cc1 emits its own /0 guard; ASPSX's macro carries both that and the
-    # INT_MIN/-1 check, so cc1's has to be suppressed or the two stack up.
-    if fl.get("expand_div"):
-        cc1_flags.append("-mno-check-zero-division")
+    # cc1's own /0 guard is deliberately left ON under expand_div.  maspsx
+    # consumes it and re-emits ASPSX's two-guard macro in its place, so the two
+    # cannot stack -- and suppressing it is actively harmful, because without
+    # the guard block sitting between them the scheduler hoists the epilogue
+    # loads into the gap between `div` and `mfhi`, which the original does not.
     run([CC1] + cc1_flags + list(extra_flags) + [tmp, "-o", asm])
 
     maspsx_flags = ["--aspsx-version", ASPSX_VERSION, "--run-assembler",
@@ -154,9 +157,12 @@ def main():
                     help="extra CC1PSX flags, space separated")
     ap.add_argument("--as-g", type=int, default=None,
                     help="override the assembler's -G for this file")
+    ap.add_argument("--expand-div", type=int, default=None,
+                    help="override ASPSX division macro expansion for this file")
     args = ap.parse_args()
     out = compile_c(args.src, args.obj,
-                    args.flags.split() if args.flags else (), args.as_g)
+                    args.flags.split() if args.flags else (), args.as_g,
+                    args.expand_div)
     print("built %s" % out)
 
 

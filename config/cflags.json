@@ -9,9 +9,9 @@
     "symbol of the same size need as_G 0. Recover per file with tools/flagsweep.py."
   ],
   "default": {
-    "opt": "-O3",
+    "as_G": 0,
     "cc1_G": 8,
-    "as_G": 0
+    "opt": "-O3"
   },
   "files": {
     "src/auto/func_80012D4C.c": {
@@ -53,8 +53,24 @@
       "as_G": 8,
       "opt": "-O2"
     },
+    "src/auto/func_80016778.c": {
+      "opt": "-O2"
+    },
     "src/auto/func_8001755C.c": {
       "opt": "-O2"
+    },
+    "src/auto/func_800181EC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80019BA0.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8001B780.c": {
+      "opt": "-Os"
+    },
+    "src/auto/func_8001D518.c": {
+      "as_G": 8,
+      "opt": "-Os"
     },
     "src/auto/func_80024060.c": {
       "opt": "-O2"
@@ -65,10 +81,36 @@
     "src/auto/func_80024914.c": {
       "opt": "-O2"
     },
+    "src/auto/func_80024DC8.c": {
+      "opt": "-Os"
+    },
+    "src/auto/func_80024E4C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80025EE0.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
+    "src/auto/func_800283EC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800289AC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800289B4.c": {
+      "opt": "-O2"
+    },
     "src/auto/func_8002BAA0.c": {
       "opt": "-O2"
     },
     "src/auto/func_8002BAAC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002C560.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002C568.c": {
       "opt": "-O2"
     },
     "src/auto/func_8002C68C.c": {
@@ -78,10 +120,83 @@
     "src/auto/func_8002CD48.c": {
       "opt": "-O2"
     },
+    "src/auto/func_8002CD8C.c": {
+      "opt": "-Os"
+    },
+    "src/auto/func_8002CDE8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002CE08.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
+    "src/auto/func_8002D3F8.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
+    "src/auto/func_8002D588.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
+    "src/auto/func_8002D62C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8002D684.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8002D6C8.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
+    "src/auto/func_8002D7C4.c": {
+      "opt": "-O2"
+    },
     "src/auto/func_8002E3DC.c": {
       "opt": "-O2"
     },
+    "src/auto/func_8002F430.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002F438.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002F930.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002F94C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002FA28.c": {
+      "opt": "-O1"
+    },
+    "src/auto/func_8002FED0.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003006C.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
     "src/auto/func_80030250.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80030F80.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80031078.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8003134C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80035668.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80035680.c": {
       "as_G": 8,
       "opt": "-O2"
     },
@@ -89,13 +204,68 @@
       "as_G": 8,
       "opt": "-O2"
     },
+    "src/auto/func_80036D3C.c": {
+      "opt": "-Os"
+    },
     "src/auto/func_80036D70.c": {
       "opt": "-O2"
+    },
+    "src/auto/func_800377AC.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8003787C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_800378D8.c": {
+      "as_G": 8,
+      "opt": "-O1"
+    },
+    "src/auto/func_80037914.c": {
+      "as_G": 8,
+      "opt": "-O1"
+    },
+    "src/auto/func_80037950.c": {
+      "as_G": 8,
+      "opt": "-O1"
     },
     "src/auto/func_800379C4.c": {
       "opt": "-O2"
     },
     "src/auto/func_80038690.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80038888.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80038890.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800389C4.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80038D14.c": {
+      "as_G": 8,
+      "opt": "-O1"
+    },
+    "src/auto/func_80038E1C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80039A14.c": {
+      "opt": "-Os"
+    },
+    "src/auto/func_80039A60.c": {
+      "opt": "-Os"
+    },
+    "src/auto/func_80039FD4.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80039FF8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003B734.c": {
       "opt": "-O2"
     },
     "src/auto/func_8003CDF8.c": {
@@ -105,6 +275,32 @@
     "src/auto/func_8003CE48.c": {
       "as_G": 8,
       "opt": "-O1"
+    },
+    "src/auto/func_8003D32C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003E7D4.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8003E80C.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
+    "src/auto/func_8003EE90.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8003EEC8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003FCD8.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
+    "src/auto/func_8003FE70.c": {
+      "as_G": 8,
+      "opt": "-O2"
     },
     "src/auto/func_8003FEE0.c": {
       "opt": "-O2"
@@ -137,6 +333,30 @@
     "src/auto/func_80040410.c": {
       "opt": "-O2"
     },
+    "src/auto/func_8004044C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8004141C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80041428.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80041434.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8004143C.c": {
+      "opt": "-Os"
+    },
+    "src/auto/func_80041464.c": {
+      "opt": "-Os"
+    },
+    "src/auto/func_800427DC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80042824.c": {
+      "opt": "-O2"
+    },
     "src/auto/func_80042918.c": {
       "as_G": 8,
       "opt": "-O2"
@@ -144,6 +364,15 @@
     "src/auto/func_8004293C.c": {
       "as_G": 8,
       "opt": "-O2"
+    },
+    "src/auto/func_80042960.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800429A8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800429BC.c": {
+      "opt": "-Os"
     },
     "src/auto/func_80042A78.c": {
       "opt": "-O2"
@@ -157,7 +386,24 @@
     "src/auto/func_800438B8.c": {
       "opt": "-O2"
     },
+    "src/auto/func_80043D48.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
     "src/auto/func_80043E30.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80044FE4.c": {
+      "opt": "-O1"
+    },
+    "src/auto/func_8004544C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8004545C.c": {
+      "opt": "-O1"
+    },
+    "src/auto/func_8004695C.c": {
+      "as_G": 8,
       "opt": "-O2"
     },
     "src/auto/func_80046990.c": {
@@ -167,9 +413,21 @@
     "src/auto/func_80046F58.c": {
       "opt": "-O2"
     },
+    "src/auto/func_80047008.c": {
+      "as_G": 8,
+      "opt": "-O1"
+    },
+    "src/auto/func_8004701C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
     "src/auto/func_8004703C.c": {
       "as_G": 8,
       "opt": "-O1"
+    },
+    "src/auto/func_80047050.c": {
+      "as_G": 8,
+      "opt": "-Os"
     },
     "src/auto/func_80047278.c": {
       "opt": "-O2"
@@ -187,14 +445,23 @@
     "src/auto/func_80047458.c": {
       "opt": "-O2"
     },
+    "src/auto/func_80047EC4.c": {
+      "opt": "-Os"
+    },
     "src/auto/func_80049120.c": {
       "opt": "-O1"
     },
     "src/auto/func_80049200.c": {
       "opt": "-O2"
     },
+    "src/auto/func_800492D8.c": {
+      "opt": "-O2"
+    },
     "src/auto/func_80049594.c": {
       "opt": "-O2"
+    },
+    "src/auto/func_800495A4.c": {
+      "opt": "-Os"
     },
     "src/auto/func_800495DC.c": {
       "opt": "-O2"
@@ -208,8 +475,14 @@
     "src/auto/func_8004975C.c": {
       "opt": "-O2"
     },
+    "src/auto/func_800498F8.c": {
+      "opt": "-O2"
+    },
     "src/auto/func_8004A6D8.c": {
       "opt": "-O2"
+    },
+    "src/auto/func_8004B9E0.c": {
+      "opt": "-Os"
     },
     "src/auto/func_8004BE6C.c": {
       "opt": "-O2"
@@ -217,7 +490,18 @@
     "src/auto/func_8004BE80.c": {
       "opt": "-O2"
     },
+    "src/auto/func_80058DC0.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
     "src/auto/func_80058DCC.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80058F10.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80059208.c": {
       "as_G": 8,
       "opt": "-O2"
     },
@@ -237,6 +521,10 @@
       "as_G": 8,
       "opt": "-O2"
     },
+    "src/auto/func_80059C9C.c": {
+      "as_G": 8,
+      "opt": "-Os"
+    },
     "src/auto/func_80059CD0.c": {
       "as_G": 8,
       "opt": "-O2"
@@ -244,10 +532,18 @@
     "src/auto/func_8005A4C4.c": {
       "opt": "-O1"
     },
+    "src/auto/func_8005C374.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
     "src/auto/func_8005C530.c": {
       "opt": "-O2"
     },
     "src/auto/func_8005C5C4.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005C690.c": {
       "as_G": 8,
       "opt": "-O2"
     },
@@ -308,10 +604,22 @@
     "src/auto/func_8006C330.c": {
       "opt": "-O1"
     },
+    "src/auto/func_80070FF8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80071000.c": {
+      "opt": "-O2"
+    },
     "src/auto/func_80072F1C.c": {
       "opt": "-O2"
     },
     "src/auto/func_80072F54.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80073300.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80073308.c": {
       "opt": "-O2"
     },
     "src/gp_probe.c": {

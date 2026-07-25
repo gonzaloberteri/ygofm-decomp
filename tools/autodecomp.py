@@ -213,17 +213,29 @@ def attempt(name, inv, tmpdir):
 
     open(src, "w").write(HEADER + gp_decls + body)
 
+    vram, size = inv[name]
+    orig = original_words(vram, size)
+    # ASPSX expands division into a two-guard macro that GCC never emits, so a
+    # function containing one cannot match without --expand-div.  Decide from the
+    # original words rather than from the C: opcode 0 with funct 0x1A/0x1B is
+    # `div`/`divu`, which is exact, where scanning the source for `/` and `%`
+    # would also hit comments and format strings.
+    has_div = any((w >> 26) == 0 and (w & 0x3F) in (0x1A, 0x1B) for w in orig)
+
     # Both knobs varied per translation unit in the original build: the
     # assembler's -G (proven -- enabling it globally broke %hi/%lo functions) and
     # almost certainly the optimisation level too.  Search rather than guess;
     # whichever combination reproduces the bytes is the right one.
     best = "compile-failed"
-    for opt, as_g in [(o, g) for o in ("-O2", "-O3", "-O1", "-Os")
-                      for g in (0, 8)]:
+    for opt, as_g, exp_div in [(o, g, d)
+                               for o in ("-O2", "-O3", "-O1", "-Os")
+                               for g in (0, 8)
+                               for d in ((0, 1) if has_div else (0,))]:
         # "--flags=-O2" as one argv entry, not two: argparse treats a separate
         # "-O2" as an option token and refuses it as a value.  A multi-word
         # value happens to slip through, which is why this only broke here.
         r = subprocess.run([sys.executable, CC, src, obj, "--as-g", str(as_g),
+                            "--expand-div", str(exp_div),
                             "--flags=" + opt],
                            capture_output=True, text=True)
         if r.returncode != 0:
@@ -238,16 +250,14 @@ def attempt(name, inv, tmpdir):
             continue
 
         words, masks = built[name]
-        vram, size = inv[name]
         if size != len(words) * 4:
             best = "size-differs"
             continue
 
-        orig = original_words(vram, size)
         mism = sum(1 for i in range(len(words))
                    if (words[i] & masks[i]) != (orig[i] & masks[i]))
         if mism == 0:
-            return "match", (open(src).read(), as_g, opt)
+            return "match", (open(src).read(), as_g, opt, exp_div)
         best = "differs:%d/%d" % (mism, len(words))
     return best, None
 
@@ -264,11 +274,21 @@ def main():
     all_funcs = funcs_mod.parse()
     inv = asm_inventory()
 
+    # A function already written by hand is not a candidate.  Two files covering
+    # the same span is the collision that broke the tree once before: the
+    # hand-written one is the better source -- it carries the reasoning, and its
+    # types were chosen rather than inferred -- so it wins, and regenerating a
+    # duplicate beside it is pure risk.
+    by_hand = {os.path.splitext(f)[0]
+               for f in os.listdir(os.path.join(REPO, "src", "manual"))
+               if f.endswith(".c")}
+
     cands = [f for f in all_funcs
              if f["addr"] < GAME_END
              and f["name"] in inv
              and f["insns"] <= args.max_insns
-             and f["name"].startswith("func_")]
+             and f["name"].startswith("func_")
+             and f["name"] not in by_hand]
     cands.sort(key=lambda f: f["insns"])
     if not args.all:
         cands = cands[:args.limit]
@@ -314,7 +334,7 @@ def main():
         stats[status.split(":")[0]] = stats.get(status.split(":")[0], 0) + 1
         if status != "match":
             continue
-        body, as_g, opt = text
+        body, as_g, opt, exp_div = text
         open(os.path.join(staging, name + ".c"), "w").write(body)
         matched.append((name, f["insns"]))
         over = {}
@@ -322,6 +342,8 @@ def main():
             over["as_G"] = as_g
         if opt != "-O3":
             over["opt"] = opt
+        if exp_div:
+            over["expand_div"] = exp_div
         if over:
             as_overrides["src/auto/%s.c" % name] = over
 
