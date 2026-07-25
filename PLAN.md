@@ -739,3 +739,58 @@ The lesson generalises. Every remaining failure bucket is downstream of the same
 thing -- the C does not yet say what the original said -- and moving a function
 between buckets is not progress. The only thing that moves `matched` is getting
 the types and structures right, one function at a time.
+
+### 2026-07-24 — parallel hand-decompilation; two tooling bugs found
+
+Six workers on disjoint batches of the 260 unmatched functions in the 4-45
+instruction range (6,246 instructions). Per-file flags moved into a
+`/* decomp-flags: opt=-O2 as_G=8 */` comment read by `tools/cc.py`, so
+concurrent workers never contend on `config/cflags.json`.
+
+First batch back: **10 of 43 matched, 148 instructions.** Three of the ten needed
+**`-O1`**, which the default config never used. Its fingerprint in the original
+assembly is a `nop` after every load and no interleaving of independent
+instructions -- i.e. scheduling off.
+
+#### Two tooling bugs, each blocking a whole class of functions
+
+**1. maspsx does not emit the load-delay `nop` for `.extern` small-data symbols.**
+`func_8003CDF8` is `lhu $v0,off($gp); nop; sh $v0,off($gp)` six times over. cc1
+emits a placeholder `#nop`, and maspsx only forces a real one when it believes
+the next instruction touches `$gp` -- a decision it makes from `.comm`/`.lcomm`/
+`.sdata` symbols declared *in the same translation unit*. A `.extern sym, size`
+is never recognised as small, so no nop is emitted and the function comes out six
+instructions short. **Any function whose body is a chain of gp load -> gp store
+is currently unmatchable for tooling reasons, not source reasons.**
+
+**2. Several `glabel ... endlabel` spans contain more than one function.** After
+the first `jr $ra` and its delay slot, unlabelled code continues -- e.g.
+`func_80035668` is 6 instructions, then a second function begins at
+`0x80035680`. `asm_inventory()` measures the whole span, so a correct
+single-function file is reported as `size N, original N+k` and can never match.
+This also means the function inventory **overstates sizes and understates the
+function count** everywhere it happens.
+
+#### Per-function idioms worth reusing
+
+* The `-G8` threshold applies to **your declaration**, not the real object. An
+  8-byte struct declaration made gas emit `sb $v0,6($gp)` where the original used
+  `%hi/%lo`; padding past 8 bytes fixed it. Conversely an incomplete type
+  (`extern u16 D_8009AF74[];`) never gets gp-relative addressing -- it needs a
+  size of 8 bytes or less for cc1 to mark it small.
+* `i[array]` instead of `array[i]` flips which register an address accumulates
+  into, and turned one 2-instruction miss into a match.
+* Two induction variables in the assembly means two pointer variables in the
+  source; a struct-array index always collapses to one. Declaration *order* of
+  the locals mattered for the last two instructions.
+* Loop shapes map predictably: `bne v0,-1` is `while (n-- != 0)`; `bgez` with
+  `li N-1` is `for (i = 0; i < N; i++)`. Getting it wrong is a size error, not a
+  register error.
+* `sll/sra 16` at entry means the parameter was declared `s32`, not `s16`.
+  Declaring `s16` cost four spurious instructions.
+* GCC 2.95 inverts `if` conditions -- write the source condition to match the
+  branch in the assembly and expect the blocks to come out swapped.
+
+The residual misses are almost all register allocation or scheduling: correct
+instruction count, one register pair swapped or one instruction in a different
+delay slot.

@@ -12,6 +12,7 @@ final bytes, so they have to be reproduced rather than approximated.
 """
 import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -26,8 +27,22 @@ ASPSX_VERSION = "2.86"
 CFLAGS_CONFIG = os.path.join(REPO, "config", "cflags.json")
 
 
+FLAG_COMMENT = re.compile(r"decomp-flags:\s*([^*/\n]+)")
+
+
 def flags_for(src):
-    """Per-file compiler/assembler flags, merged over the defaults."""
+    """Per-file compiler/assembler flags.
+
+    Three sources, later winning: the defaults, `config/cflags.json`, and a
+    `decomp-flags:` comment in the file itself, e.g.
+
+        /* decomp-flags: opt=-O2 as_G=8 */
+
+    The in-file form exists so that work can be parallelised: several people or
+    processes decompiling different functions at once would otherwise all have
+    to edit one shared JSON file, and whoever wrote last would win.  A file that
+    carries its own flags is also self-explanatory to read.
+    """
     import json
     cfg = {"default": {"opt": "-O3", "cc1_G": 8, "as_G": 0}, "files": {}}
     if os.path.exists(CFLAGS_CONFIG):
@@ -35,6 +50,22 @@ def flags_for(src):
     out = dict(cfg.get("default", {}))
     rel = os.path.relpath(os.path.abspath(src), REPO).replace("\\", "/")
     out.update(cfg.get("files", {}).get(rel, {}))
+
+    try:
+        head = open(src, encoding="utf-8", errors="replace").read(2048)
+    except OSError:
+        return out
+    m = FLAG_COMMENT.search(head)
+    if m:
+        for token in m.group(1).split():
+            if "=" not in token:
+                continue
+            key, _, value = token.partition("=")
+            key = key.strip()
+            if key in ("as_G", "cc1_G"):
+                out[key] = int(value)
+            elif key == "opt":
+                out[key] = value
     return out
 
 # Recovered by tools/flagsweep.py, not guessed.  -O2 gets simple leaf functions
