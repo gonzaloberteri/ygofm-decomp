@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -147,7 +148,14 @@ def main():
     if not args.all:
         cands = cands[:args.limit]
 
-    os.makedirs(OUTDIR, exist_ok=True)
+    # Results accumulate in build/ and replace src/auto in one move at the end.
+    # src/auto is read by tools/build.py and tools/progress_map.py, and a
+    # half-populated directory makes the progress map show a collapse that never
+    # happened -- so it must never be observable in a torn state.
+    staging = os.path.join(REPO, "build", "auto_out")
+    if os.path.isdir(staging):
+        shutil.rmtree(staging)
+    os.makedirs(staging)
     tmpdir = os.path.join(REPO, "build", "auto")
     os.makedirs(tmpdir, exist_ok=True)
 
@@ -161,7 +169,7 @@ def main():
         stats[key] = stats.get(key, 0) + 1
         if status == "match":
             body, as_g, opt = text
-            open(os.path.join(OUTDIR, name + ".c"), "w").write(body)
+            open(os.path.join(staging, name + ".c"), "w").write(body)
             matched.append((name, f["insns"]))
             over = {}
             if as_g != 0:
@@ -191,7 +199,12 @@ def main():
         print("recorded as_G overrides for %d file(s) in config/cflags.json"
               % len(as_overrides))
 
-    print("written to src/auto/")
+    # single atomic-ish swap: src/auto is never seen partially written
+    if os.path.isdir(OUTDIR):
+        shutil.rmtree(OUTDIR)
+    os.makedirs(os.path.dirname(OUTDIR), exist_ok=True)
+    os.rename(staging, OUTDIR)
+    print("written to src/auto/ (%d file(s))" % len(matched))
     return 0
 
 
