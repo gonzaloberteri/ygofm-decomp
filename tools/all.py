@@ -7,8 +7,11 @@ import os
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PY = os.path.join(REPO, ".venv", "Scripts", "python.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+
+REPO = toolchain.REPO
+PY = toolchain.venv_python()
 
 STEPS = [
     ("extract disc",      [PY, "tools/extract_disc.py"]),

@@ -23,7 +23,8 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 import cc                                                          # noqa: E402
 
 ASM = os.path.join(REPO, "asm", "code_002800.s")
-OBJDUMP = os.path.join(REPO, "tools", "bin", "bin", "mipsel-none-elf-objdump.exe")
+import toolchain                                                   # noqa: E402
+OBJDUMP = toolchain.binutil("objdump")
 
 INSN = re.compile(r"^\s*/\*\s*\w+\s+(\w{8})\s+(\w{8})\s+\*/\s+(.*)")
 OURS = re.compile(r"^\s+([0-9a-f]+):\s+([0-9a-f]{8})\s+(.*)")

@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 import cc                                                        # noqa: E402
 
 ASM = os.path.join(REPO, "asm", "code_002800.s")
-AS = os.path.join(REPO, "tools", "bin", "bin", "mipsel-none-elf-as.exe")
+import toolchain                                                   # noqa: E402
+AS = toolchain.binutil("as")
 PERMUTER = os.path.join(REPO, "tools", "permuter", "permuter.py")
 WORK = os.path.join(REPO, "build", "permute")
 
@@ -49,7 +50,7 @@ def permuter_env():
     # gitignored and assembled by hand, so a fresh checkout has no `cpp` at all
     # and the permuter dies before compiling anything.  Its objdump lookup does
     # already know the `mipsel-none-elf-` name, so cpp is the only alias needed.
-    ext = ".exe" if os.name == "nt" else ""
+    ext = toolchain.EXE
     alias = os.path.join(binbin, "cpp" + ext)
     real = os.path.join(binbin, "mipsel-none-elf-cpp" + ext)
     if not os.path.exists(alias) and os.path.exists(real):
@@ -160,7 +161,7 @@ def main():
     # the flags have to be baked into compile.sh rather than read from the source.
     fl = cc.flags_for(src)
     base_c = os.path.join(d, "base.c")
-    cpp = [os.path.join(REPO, "tools", "bin", "bin", "mipsel-none-elf-cpp.exe"),
+    cpp = [toolchain.binutil("cpp"),
            "-undef", "-nostdinc", "-D__GNUC__=2", "-D__OPTIMIZE__",
            "-Dmips", "-D__mips__", "-D__PSX__", "-DPSX", "-P"]
     for inc in cc.INCLUDES:

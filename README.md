@@ -79,9 +79,11 @@ The bytes are right, so the hash never complained. See [PLAN.md](PLAN.md).
 
 ## Requirements
 
-* **Windows.** The Psy-Q tools are 32-bit PE binaries and run natively under
-  WOW64, with no emulation layer. This is the one place where Windows is
-  genuinely easier than Linux for this work.
+* **Windows, or Docker.** The Psy-Q tools are 32-bit PE binaries and run
+  natively under WOW64, which is the one place where Windows is genuinely
+  easier than Linux for this work. Off Windows they run under Wine in a
+  container — see [Building off Windows](#building-off-windows). The rest of
+  the toolchain is native everywhere.
 * **Python 3.12 or 3.13** (`py -3`). The bare `python` on PATH may be the
   Microsoft Store stub, which does not work.
 * **Your own copy of the game disc**, as a `MODE2/2352` `.bin`/`.cue` pair
@@ -146,6 +148,69 @@ py -3 tools/extract_disc.py "path\to\game.bin"      # if the disc is elsewhere
 the splat config, split, compile, link, verify, rebuild the image, verify again,
 render the progress map. It exits non-zero the moment the output stops being
 byte-identical.
+
+### Building off Windows
+
+Exactly one part of the pipeline is Windows-only, and it is not negotiable:
+`CC1PSX.EXE` is a 32-bit Windows PE, it is the compiler whose output is being
+reproduced byte for byte, and there is no native build of it. Recompiling an
+equivalent GCC 2.95.2 from source would defeat the point — the project's claim
+is that *this* compiler emits *these* bytes. So off Windows it runs under Wine.
+
+It does **not** run under emulation. [`wibo`](https://github.com/decompals/wibo)
+is a small Win32 loader — not an emulator — that maps the PE and calls into it,
+so on an Apple Silicon Mac the x86 code goes through Rosetta 2 in-process. This
+is what decomp.me uses for the same compiler.
+
+Everything else is portable and now resolves through `tools/toolchain.py`,
+which picks the right filename for the host and attaches the loader when one is
+needed. Setup, then a report of what was found:
+
+```bash
+tools/setup_unix.sh
+python3 tools/toolchain.py
+```
+
+`setup_unix.sh` fetches `wibo` and builds **binutils 2.40 for
+`mipsel-none-elf`** from source. Both pins are deliberate. Homebrew's
+`mipsel-linux-gnu-binutils` is 2.46 and a *hosted* target triple, where this
+tree wants bare-metal at the version it was developed against — assembler
+defaults are exactly the kind of thing that silently moves bytes. There is no
+macOS PSn00bSDK bundle to unzip, which is why this builds rather than
+downloads.
+
+You still supply the proprietary half yourself: the Psy-Q SDK, the disc, and a
+BIOS if you want the boot test.
+
+#### Why not Docker, and why not Wine
+
+Both work, and both are much slower. Measured on an M4 with the same 32-bit
+test binary:
+
+| | Docker `linux/amd64` + Wine | **wibo, native** |
+|---|---|---|
+| start-up per invocation | 256 ms | **30 ms** |
+| benchmark loop | ~2.7 s | **0.25 s** |
+
+The trap is that the container *looks* accelerated. Docker Desktop registers
+Rosetta for x86-64 ELF but falls back to QEMU for i386 — and `wine32` is an
+i386 ELF, so the compiler quietly runs under QEMU while everything around it
+runs at full speed. `tools/docker/` is kept for a reproducible Linux
+environment and uses `wibo` too; it is not the recommended path on a Mac.
+
+`tools/toolchain.py` also honours three overrides, for a host that keeps things
+elsewhere: `YGOFM_BINUTILS`, `YGOFM_WINE`, `YGOFM_CC1`.
+
+One known difference to watch: decomp.me pipes preprocessed source through
+`unix2dos` before handing it to `CC1PSX.EXE`. Line endings reaching a 1990s
+Windows compiler are a plausible source of divergence, and this tree does not
+currently normalise them.
+
+**A result from a non-Windows host is not authoritative.** Whether Wine's
+`CC1PSX.EXE` is byte-for-byte identical to the same compiler under WOW64 is an
+empirical question about a proprietary binary, and the answer has to be *shown*
+on this tree, not assumed. Until `tools/verify_src.py` has been run on both and
+agreed, treat a container match as a candidate and re-verify it on Windows.
 
 `tools/build.py` alone is the fast inner loop and prints:
 

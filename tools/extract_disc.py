@@ -11,8 +11,10 @@ import struct
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_BIN = (r"C:\Users\PC\Downloads\Yu-Gi-Oh! Forbidden Memories (USA)"
-               r"\Yu-Gi-Oh! Forbidden Memories (USA).bin")
+# Per-machine: the disc is yours and is not distributed, so the only portable
+# default is "next to the repo", with an override for anywhere else.
+DEFAULT_BIN = os.environ.get("YGOFM_DISC") or os.path.join(
+    REPO, "Yu-Gi-Oh! Forbidden Memories (USA).bin")
 
 RAW = 2352          # bytes per raw sector
 USER_OFF = 24       # Mode 2 Form 1: 12 sync + 4 header + 8 subheader

@@ -23,11 +23,13 @@ import split_asm
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BIN = os.path.join(REPO, "tools", "bin", "bin")
-AS = os.path.join(BIN, "mipsel-none-elf-as.exe")
-LD = os.path.join(BIN, "mipsel-none-elf-ld.exe")
-OBJCOPY = os.path.join(BIN, "mipsel-none-elf-objcopy.exe")
+import toolchain
+
+REPO = toolchain.REPO
+BIN = toolchain.BINUTILS_DIR
+AS = toolchain.binutil("as")
+LD = toolchain.binutil("ld")
+OBJCOPY = toolchain.binutil("objcopy")
 
 VRAM = 0x80010000
 # Set by the startup code at 0x80012A54; the linker needs it to resolve the

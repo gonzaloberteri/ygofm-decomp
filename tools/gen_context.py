@@ -13,10 +13,12 @@ import os
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PSYQ_INC = os.path.join(REPO, "tools", "bin", "psyq", "p46", "Psy-Q - 46",
-                        "INCLUDE")
-CPP = os.path.join(REPO, "tools", "bin", "bin", "mipsel-none-elf-cpp.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+
+REPO = toolchain.REPO
+PSYQ_INC = toolchain.PSYQ_INCLUDE
+CPP = toolchain.binutil("cpp")
 OUT = os.path.join(REPO, "build", "context.c")
 
 # Order matters: LIBGTE.H typedefs SVECTOR/VECTOR/MATRIX, which LIBGPU.H,
