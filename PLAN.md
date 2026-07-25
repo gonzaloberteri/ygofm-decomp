@@ -850,3 +850,40 @@ lands): `D_8009B45C` (gp+0x554) main game state, `D_8009B458` (gp+0x550) sound
 driver work area with 16 x 24-byte channel records and a `SpuVoiceAttr`,
 `D_800F2C40[]` 0xE20-byte per-duelist records, `D_800E9EC8` pad block,
 `D_801A7AD8[]` 28-byte card records with bit 15 of `+0x16` as occupied.
+
+### 2026-07-25 — 320 merged functions split; the inventory was wrong
+
+`tools/split_funcs.py --write` now emits `config/split_syms.txt` (a file of its
+own, because `psyq_sigs.py --write` rewrites `symbol_addrs.txt` wholesale and
+would erase the splits), splat reads both, and the build stays byte-identical
+with all 131 C functions.
+
+**The corrected inventory, against what was previously reported:**
+
+| | before | after |
+|---|---|---|
+| game functions | 678 | **966** |
+| functions ≥500 insns | 37 | **23** |
+| share of code in those | 48.3% | **31.8%** |
+| largest function | 10,376 | **9,532** |
+| functions using `$gp` | 259 (50.8%) | 331 (45.8%) |
+
+```
+  0-9           68 funcs     390 insns    0.4%
+  10-24        244 funcs    4071 insns    4.1%
+  25-49        234 funcs    8312 insns    8.4%
+  50-99        191 funcs   13202 insns   13.3%
+  100-249      155 funcs   23239 insns   23.4%
+  250-499       51 funcs   18444 insns   18.6%
+  500+          23 funcs   31607 insns   31.8%
+```
+
+**Retraction.** The earlier claim that "37 functions hold 48.3% of the code" was
+an artefact of merged spans and is withdrawn. It is 23 functions and 31.8%, and
+the work is correspondingly less concentrated and more tractable than stated.
+The automation ceiling claim also moves: candidates up to 250 instructions now
+cover **49.6% of instructions**, against the 14.1% quoted when the ceiling was
+computed over an 80-instruction pool of merged functions.
+
+This is the third time a claim of mine survived the SHA-1 gate while being wrong
+about the program's structure. The gate proves bytes, not understanding.
