@@ -14,73 +14,197 @@
     "as_G": 0
   },
   "files": {
-    "src/gp_probe.c": {
-      "as_G": 8
+    "src/auto/func_80012D4C.c": {
+      "opt": "-O2"
     },
-    "src/auto/func_80015D0C.c": {
-      "as_G": 8
+    "src/auto/func_80012D84.c": {
+      "opt": "-O2"
     },
-    "src/auto/func_80035A58.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80058DCC.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80059AE0.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80059C18.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005F174.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005F180.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005F18C.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005F198.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005FB08.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80015CFC.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005C5C4.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80059C88.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80059CD0.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005FB14.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80042918.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005FAE4.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8003FF08.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8002C68C.c": {
-      "as_G": 8
-    },
-    "src/auto/func_8005F588.c": {
-      "as_G": 8
-    },
-    "src/auto/func_80030250.c": {
-      "as_G": 8
+    "src/auto/func_800134E0.c": {
+      "opt": "-O2"
     },
     "src/auto/func_80013898.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_800159D8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80015AD8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80015CFC.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80015D0C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8001755C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80024060.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80024088.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80024914.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002BAA0.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002BAAC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8002C68C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80030250.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80035A58.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80036D70.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003FEE0.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003FF08.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8003FF34.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003FF88.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8003FFFC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8004036C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800403F0.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80040410.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80042918.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80043178.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800438B8.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800473CC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80049120.c": {
+      "opt": "-O1"
+    },
+    "src/auto/func_80049594.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800495DC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_800495EC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8004BE6C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8004BE80.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_80058DCC.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80059AE0.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80059C18.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80059C88.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_80059CD0.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005C530.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8005C5C4.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005F174.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005F180.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005F18C.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005F198.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005F1A4.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8005F588.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005FAE4.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005FB08.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_8005FB14.c": {
+      "as_G": 8,
+      "opt": "-O2"
+    },
+    "src/auto/func_800603DC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8006086C.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8006C2FC.c": {
+      "opt": "-O2"
+    },
+    "src/auto/func_8006C30C.c": {
+      "opt": "-O1"
+    },
+    "src/gp_probe.c": {
       "as_G": 8
     }
   }

@@ -668,3 +668,52 @@ game instructions: 99265  matched 495  (0.50%)
 
 The gap between 7.96% and 0.50% is the point made in the size-distribution entry
 above: what is matched so far is almost entirely the small end of the binary.
+
+### 2026-07-24 — automation plateaus at ~0.5%; failures diagnosed
+
+Parallelised `autodecomp` and `build.py` across 16 cores (all the work is
+subprocess-bound, so threads scale nearly linearly and the GIL is irrelevant).
+**The full build now takes 3.4 seconds**, down from around 40, which makes the
+hash gate cheap enough to run constantly.
+
+That made it affordable to widen the candidate pool from 80 to 250 instructions
+and sweep `-O1/-O2/-O3` against both assembler `-G` values. The result is a
+plateau, and it is worth stating plainly:
+
+| | candidates | matched | instructions |
+|---|---|---|---|
+| ≤80 insns, single -O | 445 | 55 | 468 |
+| ≤250 insns, -O swept | 580 | **56** | **510 (0.51%)** |
+
+**135 extra candidates and a six-way flag sweep bought one function.** Unedited
+m2c output is exhausted. Breakdown over the 580:
+
+| outcome | count | share |
+|---|---|---|
+| size-differs | 283 | 49% |
+| compile-failed | 132 | 23% |
+| gp-unhandled | 55 | 9% |
+| differs | 45 | 8% |
+| **match** | **56** | **10%** |
+| m2c-failed | 9 | 2% |
+
+Sampling 60 of the compile failures gives the causes, which are not exotic:
+
+| count | cause |
+|---|---|
+| 30 | **`NULL` undeclared** -- generated files include only `types.h` and `m2c_macros.h`, neither of which defined it |
+| 7 | invalid unary `*` on an unknown type |
+| 5 | too few arguments -- m2c emits a prototype with one parameter then calls with none |
+| 4 | parse error |
+| rest | assorted pointer/integer conversion warnings |
+
+`NULL` was half the bucket and is a one-line fix. The "too few arguments" case is
+an m2c limitation: it declares `s32 func_8004BAE4(s32);` and then emits
+`func_8004BAE4()`. Relaxing those prototypes to unprototyped form would compile,
+but the call still passes no argument, so it would move the function from
+`compile-failed` to `size-differs` rather than to `match` -- not a real win.
+
+`size-differs` at 49% is the honest wall. Those compile fine and produce the
+wrong instruction count, which means the C is not yet expressing what the
+original expressed -- wrong integer widths, wrong struct layouts, wrong
+signedness. No flag search fixes that; it is per-function structure recovery.
