@@ -31,8 +31,11 @@ GFLAGS = ["-G0", "-G4", "-G8"]
 
 
 def try_flags(src, flags):
+    # "--flags=..." as one argv entry: argparse refuses a separate value that
+    # starts with '-', and a single-flag sweep would hit that every time.
     r = subprocess.run(
-        [PY, os.path.join(REPO, "tools", "match.py"), src, "--flags", " ".join(flags)],
+        [PY, os.path.join(REPO, "tools", "match.py"), src,
+         "--flags=" + " ".join(flags)],
         capture_output=True, text=True)
     out = r.stdout
     m = re.search(r"(\d+) matched, (\d+) differ", out)

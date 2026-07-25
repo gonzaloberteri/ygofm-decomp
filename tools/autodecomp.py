@@ -90,11 +90,17 @@ def attempt(name, inv, tmpdir):
 
     open(src, "w").write(HEADER + gp_decls + body)
 
-    # The assembler's -G varies per translation unit in the original build, so
-    # try both rather than guessing; whichever reproduces the bytes is right.
+    # Both knobs varied per translation unit in the original build: the
+    # assembler's -G (proven -- enabling it globally broke %hi/%lo functions) and
+    # almost certainly the optimisation level too.  Search rather than guess;
+    # whichever combination reproduces the bytes is the right one.
     best = "compile-failed"
-    for as_g in (0, 8):
-        r = subprocess.run([sys.executable, CC, src, obj, "--as-g", str(as_g)],
+    for opt, as_g in [(o, g) for o in ("-O2", "-O3", "-O1") for g in (0, 8)]:
+        # "--flags=-O2" as one argv entry, not two: argparse treats a separate
+        # "-O2" as an option token and refuses it as a value.  A multi-word
+        # value happens to slip through, which is why this only broke here.
+        r = subprocess.run([sys.executable, CC, src, obj, "--as-g", str(as_g),
+                            "--flags=" + opt],
                            capture_output=True, text=True)
         if r.returncode != 0:
             continue
@@ -117,7 +123,7 @@ def attempt(name, inv, tmpdir):
         mism = sum(1 for i in range(len(words))
                    if (words[i] & masks[i]) != (orig[i] & masks[i]))
         if mism == 0:
-            return "match", (open(src).read(), as_g)
+            return "match", (open(src).read(), as_g, opt)
         best = "differs:%d/%d" % (mism, len(words))
     return best, None
 
@@ -154,11 +160,16 @@ def main():
         key = status.split(":")[0]
         stats[key] = stats.get(key, 0) + 1
         if status == "match":
-            body, as_g = text
+            body, as_g, opt = text
             open(os.path.join(OUTDIR, name + ".c"), "w").write(body)
             matched.append((name, f["insns"]))
+            over = {}
             if as_g != 0:
-                as_overrides["src/auto/%s.c" % name] = {"as_G": as_g}
+                over["as_G"] = as_g
+            if opt != "-O3":
+                over["opt"] = opt
+            if over:
+                as_overrides["src/auto/%s.c" % name] = over
         if i % 25 == 0 or i == len(cands):
             print("  %d/%d attempted, %d matched"
                   % (i, len(cands), len(matched)), flush=True)

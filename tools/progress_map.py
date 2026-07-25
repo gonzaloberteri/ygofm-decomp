@@ -1,18 +1,30 @@
-"""Draw decompilation progress as a PNG grid, one cell per function.
+"""Draw decompilation progress as a PNG, one rectangle per function.
 
-Function counts flatter the progress -- a 6-instruction leaf scores the same
-as a 400-instruction state machine -- so the header also reports matched
-instructions, which is the honest measure of how much of the game is done.
+**Area is proportional to instruction count.**  Equal-sized cells were actively
+misleading here: 37 of 678 game functions hold 48% of the code, and the largest
+single function is 10,376 instructions against a 147 mean.  On an equal grid a
+6-instruction leaf and a 400-instruction state machine look identical, so the
+picture flattered progress by more than 10x.  With area weighting, the coloured
+fraction of the image *is* the fraction of the game that is done.
 
-Cells are laid out strictly by address, so a given function keeps the same
-cell across runs and two maps can be diffed by eye.  $gp users get their own
-colour because they need extra handling -- the assembler run with -G8, and
-m2c's undeclared `saved_reg_gp` rewritten into a real extern at gp+offset.
-They are no longer *blocked*, as they were when this tool was written; the
-distinction is kept because it still predicts which functions need that path.
+Layout is an order-preserving strip treemap: functions stay in address order,
+filled left to right and top to bottom, with each row's height chosen so the
+row's rectangles have the right areas.  Row breaks are picked by aspect ratio,
+so cells stay roughly square without reordering.  Everything is sorted
+explicitly and there are no timestamps, so the PNG is byte-identical between
+runs on unchanged input.
+
+`--layout grid` restores the old one-cell-per-function view, which is still
+useful for counting functions rather than weighing them.
+
+$gp users get their own colour because they need extra handling -- the assembler
+run with -G8, and m2c's undeclared `saved_reg_gp` rewritten into a real extern
+at gp+offset.  They are no longer *blocked*, as they were when this tool was
+written; the distinction is kept because it still predicts which functions need
+that path.
 
     py -3 tools/progress_map.py
-    py -3 tools/progress_map.py --cell 8 --cols 96 --out docs/progress.png
+    py -3 tools/progress_map.py --layout grid --cell 8 --cols 96
 """
 import argparse
 import glob
@@ -109,6 +121,79 @@ def draw_grid(draw, items, x0, y0, cols, cell, gap):
     return y0 + grid_height(len(items), cols, cell, gap)
 
 
+def _row_aspect(row, width, scale):
+    """Mean aspect ratio (always >= 1) of a candidate row of weights."""
+    h = sum(row) * scale / width
+    if h <= 0:
+        return float("inf")
+    worst = 0.0
+    for w in row:
+        rw = w * scale / h
+        if rw <= 0:
+            return float("inf")
+        worst += max(rw / h, h / rw)
+    return worst / len(row)
+
+
+def strip_treemap(weights, width, target_height):
+    """Order-preserving weighted layout.
+
+    Returns [(x, y, w, h)] in the same order as `weights`, with area
+    proportional to weight.  Rows grow while adding the next item improves the
+    row's mean aspect ratio, which keeps rectangles near-square without
+    reordering them -- reordering would break the address ordering that makes
+    two maps comparable.
+    """
+    total = float(sum(weights))
+    if total <= 0:
+        return []
+    scale = (width * target_height) / total
+
+    rects = []
+    i, y = 0, 0.0
+    while i < len(weights):
+        row = [weights[i]]
+        best = _row_aspect(row, width, scale)
+        j = i + 1
+        while j < len(weights):
+            trial = row + [weights[j]]
+            score = _row_aspect(trial, width, scale)
+            if score > best:
+                break
+            best, row, j = score, trial, j + 1
+
+        h = sum(row) * scale / width
+        x = 0.0
+        for w in row:
+            rw = w * scale / h
+            rects.append((x, y, rw, h))
+            x += rw
+        y += h
+        i = max(j, i + 1)
+    return rects
+
+
+def draw_treemap(draw, items, x0, y0, width, target_height, font=None):
+    """items is [(weight, fill, outline, label)]; returns the y below it."""
+    rects = strip_treemap([max(1, it[0]) for it in items], width, target_height)
+    bottom = y0
+    for (x, y, w, h), (_, fill, outline, label) in zip(rects, items):
+        x1, y1 = x0 + x, y0 + y
+        # round outward so no seams appear between neighbours, and keep every
+        # rectangle at least one pixel visible however small the function is
+        x2 = x0 + x + max(1.0, w)
+        y2 = y0 + y + max(1.0, h)
+        draw.rectangle([int(x1), int(y1), max(int(x1), int(x2) - 1),
+                        max(int(y1), int(y2) - 1)], fill=fill, outline=outline)
+        bottom = max(bottom, int(y2))
+
+        # Name the few functions big enough to carry a label; on this data that
+        # is exactly the handful that dominate the remaining work.
+        if font is not None and label and w > 58 and h > 16:
+            draw.text((int(x1) + 4, int(y1) + 3), label, font=font, fill=FG)
+    return bottom
+
+
 def draw_legend(draw, entries, x0, y0, font, box):
     x = x0
     for fill, outline, label in entries:
@@ -122,9 +207,16 @@ def draw_legend(draw, entries, x0, y0, font, box):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cell", type=int, default=12, help="cell size in pixels")
-    ap.add_argument("--gap", type=int, default=2, help="gap between cells")
-    ap.add_argument("--cols", type=int, default=64, help="cells per row")
+    ap.add_argument("--layout", choices=("treemap", "grid"), default="treemap",
+                    help="treemap weights each function by instruction count; "
+                         "grid gives every function an equal cell")
+    ap.add_argument("--width", type=int, default=1100,
+                    help="treemap content width in pixels")
+    ap.add_argument("--map-height", type=int, default=520,
+                    help="treemap target height for the game band")
+    ap.add_argument("--cell", type=int, default=12, help="grid cell size")
+    ap.add_argument("--gap", type=int, default=2, help="gap between grid cells")
+    ap.add_argument("--cols", type=int, default=64, help="grid cells per row")
     ap.add_argument("--out", default=os.path.join(REPO, "progress.png"))
     ap.add_argument("--no-sdk", action="store_true",
                     help="omit the Psy-Q SDK band")
@@ -189,17 +281,31 @@ def main():
     body_h = line_height(body_font)
     small_h = line_height(small_font)
 
-    width = MARGIN * 2 + cols * (cell + gap) - gap
+    treemap = args.layout == "treemap"
+    ins_sdk = sum(f["insns"] for f in sdk)
+
+    if treemap:
+        content_w = args.width
+        game_h = args.map_height
+        # Give the SDK band the same pixels-per-instruction as the game band, so
+        # the two are directly comparable rather than merely adjacent.
+        sdk_h = max(24, int(game_h * ins_sdk / ins_total)) if ins_total else 24
+    else:
+        content_w = cols * (cell + gap) - gap
+        game_h = grid_height(len(game), cols, cell, gap)
+        sdk_h = grid_height(len(sdk), cols, cell, gap)
+
+    width = MARGIN * 2 + content_w
     y = MARGIN + title_h + 10
     y += len(head) * (body_h + 4) + 8
     y += cell + 8 + 12
     y += small_h + 6
     game_top = y
-    y += grid_height(len(game), cols, cell, gap)
+    y += game_h
     if not args.no_sdk:
         y += 18 + small_h + 6
         sdk_top = y
-        y += grid_height(len(sdk), cols, cell, gap)
+        y += sdk_h
     height = y + MARGIN
 
     img = Image.new("RGB", (width, height), BG)
@@ -215,23 +321,39 @@ def main():
     y += 8
     draw_legend(draw, legend, MARGIN, y, small_font, cell)
 
+    scale_note = ("area proportional to instruction count"
+                  if treemap else "one equal cell per function")
     draw.text((MARGIN, game_top - small_h - 6),
-              "game code  0x%08X - 0x%08X, %d functions, ordered by address"
-              % (game[0]["addr"], GAME_END, len(game)),
+              "game code  0x%08X - 0x%08X, %d functions, %d instructions, "
+              "ordered by address, %s"
+              % (game[0]["addr"], GAME_END, len(game), ins_total, scale_note),
               font=small_font, fill=MUTED)
     style = {"matched": (C_MATCHED, C_MATCHED),
              "gp": (C_GP, C_GP),
              "todo": (C_TODO, C_TODO_E)}
-    draw_grid(draw, [style[f["status"]] for f in game],
-              MARGIN, game_top, cols, cell, gap)
+
+    if treemap:
+        draw_treemap(draw,
+                     [(f["insns"],) + style[f["status"]] + (f["name"],)
+                      for f in game],
+                     MARGIN, game_top, content_w, game_h, small_font)
+    else:
+        draw_grid(draw, [style[f["status"]] for f in game],
+                  MARGIN, game_top, cols, cell, gap)
 
     if not args.no_sdk:
         draw.text((MARGIN, sdk_top - small_h - 6),
-                  "Psy-Q SDK  0x%08X and above, %d functions -- identified by "
-                  "signature (%d named), NOT decompiled" % (GAME_END, len(sdk), named),
+                  "Psy-Q SDK  0x%08X and above, %d functions, %d instructions "
+                  "-- identified by signature (%d named), NOT decompiled"
+                  % (GAME_END, len(sdk), ins_sdk, named),
                   font=small_font, fill=MUTED)
-        draw_grid(draw, [(C_SDK, C_SDK)] * len(sdk),
-                  MARGIN, sdk_top, cols, cell, gap)
+        if treemap:
+            draw_treemap(draw,
+                         [(f["insns"], C_SDK, C_SDK, "") for f in sdk],
+                         MARGIN, sdk_top, content_w, sdk_h, None)
+        else:
+            draw_grid(draw, [(C_SDK, C_SDK)] * len(sdk),
+                      MARGIN, sdk_top, cols, cell, gap)
 
     out = os.path.abspath(args.out)
     d = os.path.dirname(out)
