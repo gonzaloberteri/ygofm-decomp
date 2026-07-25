@@ -33,6 +33,15 @@ IMAGE = os.path.join(REPO, "build", "ygofm.bin")
 WORK = os.path.join(REPO, "build", "trace")
 FUNCS_TXT = os.path.join(WORK, "funcs.txt")
 HITS_TXT = os.path.join(WORK, "hits.txt")
+# Save states captured by hand in the Redux GUI.  They hold game RAM, so they are
+# gitignored and each checkout supplies its own; see PLAN.md.
+STATE_DIR = os.path.join(REPO, "tools", "states")
+SLOT_NAMES = {
+    1: "main menu",
+    2: "name input",
+    3: "first duel, deck build",
+    4: "in a duel",
+}
 
 
 def write_function_list():
@@ -91,7 +100,17 @@ def main():
     ap.add_argument("--frames", type=int, default=1800)
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--timeout", type=int, default=600)
+    ap.add_argument("--state", type=int, default=None, choices=(1, 2, 3, 4),
+                    help="start from a PCSX-Redux save state slot: "
+                         "1 main menu, 2 name input, 3 deck build, 4 in a duel")
+    ap.add_argument("--out", default=None,
+                    help="write hits to this file instead of hits.txt, so "
+                         "several traces can be kept side by side")
     args = ap.parse_args()
+
+    global HITS_TXT
+    if args.out:
+        HITS_TXT = os.path.join(WORK, args.out)
 
     index = write_function_list()
     if args.report:
@@ -112,11 +131,20 @@ def main():
            "-dofile", os.path.join("tools", "trace.lua"),
            "-logfile", os.path.join("build", "trace", "redux.log"),
 ]
-    print("tracing %d frames under PCSX-Redux..." % args.frames)
+    env = dict(os.environ, TRACE_FRAMES=str(args.frames), TRACE_HITS=HITS_TXT)
+    if args.state:
+        state = os.path.join(STATE_DIR, "SLUS01411.sstate%d" % args.state)
+        if not os.path.exists(state):
+            sys.exit("%s missing -- capture the save states in the Redux GUI "
+                     "first (File -> Save state slots)" % state)
+        env["TRACE_STATE"] = state.replace("\\", "/")
+        print("tracing %d frames from state %d (%s)..."
+              % (args.frames, args.state, SLOT_NAMES[args.state]))
+    else:
+        print("tracing %d frames from boot..." % args.frames)
     # stdin must stay open: with -no-ui the TUI reads stdin, and an immediate EOF
     # makes it quit before the game runs at all. That looked exactly like the Lua
     # script failing.
-    env = dict(os.environ, TRACE_FRAMES=str(args.frames))
     proc = subprocess.Popen(cmd, cwd=REPO, stdin=subprocess.PIPE, env=env)
     try:
         proc.wait(timeout=args.timeout)

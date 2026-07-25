@@ -22,7 +22,7 @@ local C = ffi.load 'PCSX'
 local BP_EXEC = 0        -- enum BreakpointType { Exec, Read, Write }
 
 local FUNCS_IN = 'build/trace/funcs.txt'
-local HITS_OUT = 'build/trace/hits.txt'
+local HITS_OUT = os.getenv('TRACE_HITS') or 'build/trace/hits.txt'
 
 local frames = 0
 -- From the environment, not a global: main.cc runs every -dofile *before* any
@@ -58,9 +58,13 @@ local shared_cb = ffi.cast('bool (*)(uint32_t, unsigned, const char*)',
         return false
     end)
 
+-- Checkpointed, not written once at the end.  Under the interpreter with every
+-- function breakpointed a frame costs seconds, so a run that overshoots its
+-- timeout is the normal case rather than the exception -- and losing the whole
+-- trace to that would make every run an all-or-nothing bet.
 local function writeResults(reason)
     if done then return end
-    done = true
+    if reason ~= 'checkpoint' then done = true end
     local f = io.open(HITS_OUT, 'w')
     if not f then
         log('could not write ' .. HITS_OUT)
@@ -100,16 +104,89 @@ local function armBreakpoints()
     return nfuncs > 0
 end
 
-if armBreakpoints() then
+-- Optional: start from a save state instead of from boot.  Coverage of the duel
+-- path is otherwise unreachable -- the boot path never enters a duel on its own,
+-- and under the interpreter, which is the only mode that observes breakpoints,
+-- there are nowhere near enough frames to navigate there even if it could.
+--
+-- Redux writes its slots through ZWriter, so the file is deflate-compressed and
+-- has to be read back through zReader; handing the raw file to loadSaveState
+-- fails.
+local statePath = os.getenv('TRACE_STATE')
+
+local function loadState()
+    if statePath == nil or statePath == '' then return true end
+    local ok, err = pcall(function()
+        local f = Support.File.open(statePath, 'READ')
+        if f == nil then error('could not open ' .. statePath) end
+        PCSX.loadSaveState(Support.File.zReader(f))
+    end)
+    if not ok then
+        log('save state load FAILED: ' .. tostring(err))
+        return false
+    end
+    log('loaded save state ' .. statePath)
+    return true
+end
+
+-- Three phases, in this order for two independent reasons.
+--
+-- The state must not be restored during BIOS init.  Loading it on the very
+-- first Vsync -- while the log still reads "KERNEL SETUP!" -- left the emulator
+-- with nothing running and no further Vsync ever arrived.
+--
+-- And the breakpoints must not be armed until after that.  Under the
+-- interpreter each armed breakpoint costs time on every instruction, so arming
+-- them up front means paying for 1206 of them through an entire boot that is
+-- about to be thrown away by the state load anyway.
+local warmup = tonumber(os.getenv('TRACE_WARMUP')) or 120
+local phase = statePath ~= nil and statePath ~= '' and 'boot' or 'trace'
+
+if phase == 'trace' and not armBreakpoints() then
+    log('nothing to trace')
+else
+    if phase == 'boot' then
+        log(string.format('booting %d frames before restoring the state', warmup))
+    end
     PCSX.Events.createEventListener('GPU::Vsync', function()
         frames = frames + 1
-        if frames % 200 == 0 then
+
+        if phase == 'boot' then
+            if frames >= warmup then
+                if not loadState() then
+                    writeResults('state-load-failed')
+                    PCSX.quit(1)
+                    return
+                end
+                phase = 'settle'
+                frames = 0
+            end
+            return
+        end
+
+        if phase == 'settle' then
+            -- Give the restored state a few frames to run before measuring, so
+            -- the first frame after a load is not mistaken for normal play.
+            if frames >= 10 then
+                if not armBreakpoints() then
+                    writeResults('no-breakpoints')
+                    PCSX.quit(1)
+                    return
+                end
+                phase = 'trace'
+                frames = 0
+                log('tracing until frame ' .. limit)
+            end
+            return
+        end
+
+        if frames % 10 == 0 then
             log(string.format('frame %d: %d/%d hit', frames, nhits, nfuncs))
+            writeResults('checkpoint')
         end
         if frames >= limit then
             writeResults('frame-limit')
             PCSX.quit(0)
         end
     end)
-    log('tracing until frame ' .. limit)
 end

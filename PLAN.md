@@ -1530,3 +1530,89 @@ One incidental fix worth recording, since it looked like a missing feature and
 was not: Redux ships with `gui.ShowMenu = false` in its config, which hides the
 menu bar entirely, so there is no File menu and no visible way to reach the save
 state slots. It is a config toggle, not a keybinding.
+
+### 2026-07-25 — duel-path evidence, and the sound driver is what runs
+
+The item this document listed as **needing a human is done**: PCSX-Redux save
+states for all four checkpoints exist, so target selection no longer has to
+guess. `tools/trace.py --state N` and the new `tools/sample.py --state N` both
+restore one before measuring.
+
+Three things had to be right, and two of them were silent:
+
+1. **The state must not be restored during BIOS init.** Loading it on the first
+   Vsync — while the log still read `KERNEL SETUP!` — left the emulator with
+   nothing running and no further Vsync ever arrived. Both tools now boot a
+   warmup first. Note how long that has to be: at frame 120 under the
+   interpreter the log is still at `boot file : cdrom:\SLUS_014.11;1`, so the
+   game EXE had not started at all.
+2. **Breakpoints must be armed after the state load, not before.** Under the
+   interpreter every armed breakpoint costs time on every instruction, so
+   arming 1206 of them up front means paying for an entire boot that the state
+   load is about to discard.
+3. **Redux writes its slots through ZWriter**, so a slot file is
+   deflate-compressed and has to be read back through `Support.File.zReader`.
+   Handing the raw file to `PCSX.loadSaveState` fails.
+
+Both tools now **checkpoint their results** every few frames instead of writing
+once at the end. Overshooting a timeout is the normal case here, not the
+exception, and losing a whole run to it made every run an all-or-nothing bet —
+one 3600-frame sampling run reached frame 3000 and produced nothing.
+
+#### What the duel actually executes
+
+Sampling the in-duel state, 1800 frames under the dynarec:
+
+| function | samples | insns | decompiled |
+|---|---|---|---|
+| `func_800736C4` | 1772 | 16 | yes |
+| `func_8004AAFC` | 6 | 122 | no |
+| `func_8004C84C` | 3 | 31 | no |
+| `func_800478EC` | 3 | 95 | no |
+| `func_8004C114` | 2 | 195 | no |
+| `func_8004B374` | 2 | 74 | no |
+| `func_8004ADE8` | 2 | 355 | no |
+| `func_8004C8C8` | 1 | 102 | no |
+| `func_8004B734` | 1 | 72 | no |
+| `func_8004A43C` | 1 | 55 | no |
+| `func_8004A0FC` | 1 | 96 | no |
+| `func_80049FB4` | 1 | 82 | no |
+
+**This is a different cluster from the boot ranking**, which found
+`func_8005BFC8` and `func_80043960`. Eleven evidence-backed targets, 1,179
+instructions, none decompiled.
+
+**But read it correctly, because the obvious reading is wrong.** These are not
+duel *logic*. `D_8009B458` and `SpuSetVoiceAttr` identify the whole
+`0x80047xxx`–`0x8004Cxxx` block as the **sound driver**, and the reason it
+dominates is that a restored state with no controller input sits in its idle
+loop with music playing. So this is the duel's per-frame audio path. Two limits
+carry forward:
+
+* Sampling once per Vsync **aliases against the 60 Hz loop** — this is a hotness
+  ranking, not coverage. A function absent from it has not been shown to be
+  unused. `func_800736C4`, already matched, still takes 98% of samples.
+* **No input is supplied**, so nothing that needs a button press is reached.
+  Summon, attack and fusion logic are still unmeasured. Driving the pad from Lua
+  is the next step if that coverage is wanted.
+
+#### func_8004C84C: right length, wrong reason — a false signal caught
+
+Attempted from the above list and **not matched**; it is in `build/rejected/`.
+Worth recording because of how it failed. Marking `SoundVoice.unk_1E` volatile
+brought the instruction count from 3 short to exact — and the structure was
+*further* from the original, having gained an `andi 0xffff` and duplicated the
+pointer increment into both arms. A matching count is not evidence.
+
+The real obstacle is that the original reloads `D_8009B458` once per iteration
+where GCC hoists it out of the loop. That is loop-invariant motion, not
+aliasing: `-fno-strict-aliasing` changes nothing, because a `u16` store cannot
+alias a pointer variable and GCC is right about that. Neither a volatile
+pointer (which reloads too often), nor capturing the pointer in the loop
+condition, nor `-fno-strict-aliasing` reproduces exactly one reload per
+iteration. Left as a permuter candidate.
+
+`include/game.h` gained `SoundVoice.unk_1E` at 0x1E, split out of `pad_18`
+without changing the struct size or any other offset. That offset is
+evidence-backed — it is read `lhu` and written `sh` in the original — unlike the
+`volatile`, which is not, and which was reverted.

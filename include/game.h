@@ -337,7 +337,12 @@ typedef struct SoundVoice {
     /* 0x0E */ char pad_0E[0x06];
     /* 0x14 */ u16  unk_14;         /* copied into SpuVoiceAttr+0x18 (note) */
     /* 0x16 */ u16  unk_16;         /* copied into SpuVoiceAttr+0x1A (sample_note) */
-    /* 0x18 */ char pad_18[0x10];
+    /* 0x18 */ char pad_18[0x06];
+    /* 0x1E */ u16  unk_1E;         /* a countdown: func_8004C84C decrements it
+                                     * once per call while unk_03 < 0x10, and
+                                     * clamps it to 0 otherwise.  Read and
+                                     * written as a halfword. */
+    /* 0x20 */ char pad_20[0x08];
 } SoundVoice;                        /* size 0x28 */
 
 /* The 0x4A4 sub-block, reached as `base + 0x4A4` and then indexed.
