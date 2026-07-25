@@ -1801,3 +1801,82 @@ This is a *different* residual from the register-allocation class: the permuter
 cannot help, because no rewriting of C adds a `nop`. It is a delay-slot filling
 decision, and the next place to look is `reorg.c` in the GCC tree rather than
 more source shapes.
+
+### 2026-07-25 — the sound driver cluster is 86% blocked by one unreproduced idiom
+
+The eleven evidence-backed targets from the duel sampling looked like a coherent
+module to work through. They are, but **nine of the eleven are blocked by the
+same thing**, and measuring that is more useful than attempting them one at a
+time and failing eleven times.
+
+Those nine reload `D_8009B458` from memory *inside* their loops — a fresh
+`lui %hi / lw %lo` pair on every iteration. GCC 2.95.2 hoists that load out of
+the loop under every combination tried:
+
+* every optimisation level, including all three allocation modes;
+* `cc1_G=0` and `cc1_G=8` (the latter changes the load into the assembler's
+  macro form, which is right, but GCC then caches the *value* in a saved
+  register instead of the address);
+* `-fno-strict-aliasing`, `-fno-gcse`, `-fno-cse-follow-jumps`,
+  `-fno-expensive-optimizations`, `-fno-thread-jumps`, `-fno-move-all-movables`,
+  `-fno-force-mem`, `-fno-caller-saves` — all identical output;
+* a `volatile` pointer (reloads too often — 47 instructions against 31), and
+  capturing the pointer in the loop condition.
+
+GCC is not wrong to hoist: a `u16` store through a `SoundVoice *` cannot alias a
+`SoundWork *` variable, which is why `-fno-strict-aliasing` changes nothing. The
+question is what made the original build reload it anyway.
+
+| function | insns | reloads in a loop |
+|---|---|---|
+| `func_8004ADE8` | 355 | yes |
+| `func_8004C114` | 195 | yes |
+| `func_8004AAFC` | 122 | yes |
+| `func_8004C8C8` | 102 | yes |
+| `func_8004A0FC` | 96 | yes |
+| `func_800478EC` | 95 | **no** |
+| `func_80049FB4` | 82 | **no** |
+| `func_8004B374` | 74 | yes |
+| `func_8004B734` | 72 | yes |
+| `func_8004A43C` | 55 | yes |
+| `func_8004C84C` | 31 | yes |
+
+**1,102 of 1,279 instructions (86%) sit behind this one idiom.** So it is worth
+solving properly rather than working around: it is the single highest-leverage
+unknown left in the project, ahead of the register-allocation wall, because it
+gates six times more code than any individual near-miss.
+
+Two consequences for how to spend effort:
+
+* `func_800478EC` and `func_80049FB4` are the tractable pair, and are where the
+  cluster should be attacked from.
+* `func_8004C84C` improved from 3 instructions short to **1 short** with the new
+  idioms (`cc1_G=8`, and a `SoundVoice *` local so the voice address is computed
+  once per iteration rather than per access), but the last instruction is the
+  reload. Parked.
+
+#### func_80049FB4: 82 of 82 instructions, structure exact, registers not
+
+Reached the right length and the right instruction sequence, and is parked in
+`build/rejected/` at 53 of 82 words differing — which sounds worse than it is,
+because a single early register choice renames everything downstream.
+
+Three source-shape findings got it there, and all three generalise:
+
+* **An array index truncated to `s16` costs an instruction.** The original scales
+  the row index with `sll 16; sra 8`, which is `((s16)x) << 8`; without the cast
+  GCC emits a bare `sll 8`. That one cast was the difference between 81 and 82
+  instructions.
+* **Declaration order decides operand order.** Computing `note + oct` into its
+  own local before `frac` reproduced the original's `addu; sll; subu` sequence;
+  with `frac` first the three came out permuted.
+* **Which arm of the `if` is written first decides block layout**, and it is not
+  the inversion rule. Writing `if (semi >= 0) { positive } else { negative }`
+  put the blocks in the original's order and took the diff from 71 to 53; the
+  `if (semi < 0)` form did not, at any optimisation level.
+
+Also confirmed here, from the other direction: `/12` and `%12` on a **literal**
+produce the `0x2AAAAAAB` magic multiply, and the original contains exactly that.
+That is the same rule as `func_8005F1B8` seen positively — there the original has
+a real `div`, so the divisor cannot have been a literal; here it has the magic
+multiply, so it must have been.
