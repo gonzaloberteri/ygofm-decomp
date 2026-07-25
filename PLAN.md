@@ -717,3 +717,25 @@ but the call still passes no argument, so it would move the function from
 wrong instruction count, which means the C is not yet expressing what the
 original expressed -- wrong integer widths, wrong struct layouts, wrong
 signedness. No flag search fixes that; it is per-function structure recovery.
+
+#### The NULL fix, measured
+
+Defining `NULL` did what it was supposed to and almost nothing for the score:
+
+| | before | after |
+|---|---|---|
+| compile-failed | 132 | **107** |
+| size-differs | 283 | 303 |
+| differs | 45 | 49 |
+| **match** | **56** | **57** |
+| instructions | 510 | **540 (0.54%)** |
+
+25 files that would not compile now compile, and **24 of them landed in
+`size-differs` or `differs`** -- one became a match. This is exactly the outcome
+predicted for the prototype-relaxation idea, which is why that one was not
+implemented: unblocking the compiler does not make the C correct.
+
+The lesson generalises. Every remaining failure bucket is downstream of the same
+thing -- the C does not yet say what the original said -- and moving a function
+between buckets is not progress. The only thing that moves `matched` is getting
+the types and structures right, one function at a time.

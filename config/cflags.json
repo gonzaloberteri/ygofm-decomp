@@ -150,6 +150,9 @@
       "as_G": 8,
       "opt": "-O2"
     },
+    "src/auto/func_8005A4C4.c": {
+      "opt": "-O1"
+    },
     "src/auto/func_8005C530.c": {
       "opt": "-O2"
     },
