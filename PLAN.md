@@ -1415,3 +1415,118 @@ not because of their size or address.
 
 Duel-path coverage additionally needs a Redux save state, since DuckStation's
 format is not portable.
+
+### 2026-07-25 — expand_div works; and division by a literal never survives
+
+`--expand-div` is fixed and verified against target bytes. The earlier entry
+recorded it as non-functional with a partial diagnosis; both halves are now
+confirmed, and one of them was mine to correct.
+
+**What ASPSX does.** GCC 2.95.2 never emits the assembler's `div`/`rem` macro.
+It prints the raw instruction with a `$zero` destination — the field is unused,
+since MIPS division writes hi/lo — then a separate `mfhi`/`mflo`, then its own
+divide-by-zero guard. ASPSX emits that guard **and** the INT_MIN/-1 guard, with
+the move last. So the expansion has to place both guards at the division and
+drop GCC's, which the fork now does.
+
+**The proof it is the assembler and not the compiler** is already in this
+document: the guard uses `$at`, and cc1 never allocates `$at`. Corroborated
+negatively — no cc1 flag reproduces the shape. `-mcheck-range-division` exists
+and emits a *different* one on real registers (`$3`/`$4`, two separate `break 6`
+blocks); `-mmips-as` changes nothing; `-mno-gas` is rejected outright.
+
+**Retraction of my own first attempt.** I first made the expansion consume the
+move as well as the guard, on the assumption that the move is always adjacent to
+the division. It is not — the scheduler separates them, and `func_80018C34` is a
+live example — and when it did the expansion silently did nothing. Expanding at
+the division and leaving the move where GCC put it is both simpler and what
+ASPSX actually does: a macro lengthens the stream at one point without moving
+anything around it.
+
+Two consequences that only showed up against real bytes:
+
+* The move belongs to the macro, so it takes the macro's trailing load-delay
+  nop. Reaching the plain `mflo`/`mfhi` branch, it was not getting one.
+* Look-ahead must skip lines an expansion consumed. GCC's `#nop` placeholder
+  after the move was judged against the guard that had just been removed, so it
+  stayed a comment and a nop the original has went missing.
+
+**`-mno-check-zero-division` is actively wrong here** and `cc.py` no longer
+passes it. Removing GCC's guard also removes the block that keeps the move next
+to the division, and the scheduler then hoists the epilogue loads into the gap.
+
+#### The bigger finding: a literal divisor is always strength-reduced
+
+`func_8005F1B8` divides by 750. GCC 2.95.2 turns division by a **literal** into a
+magic multiply at **every** optimisation level — `-O0`, `-O1`, `-O2`, `-O3` and
+`-Os` all do it, so no flag search can reach it. But all three of
+
+```c
+int d = 750;  return x / d;        /* local            */
+volatile int d = 750; ...          /* volatile local   */
+static int g = 750; return x / g;  /* file-scope       */
+```
+
+emit a real `div` with `li $3,750`. The constant is not propagated into the
+divisor before expand.
+
+**So a real `div` by a constant in the original proves the source named it.**
+Any function whose disassembly shows `addiu $rX, $zero, N` feeding a `div` had a
+variable in the source, not a literal — writing the literal cannot match, at any
+flag setting. Where the variable is *declared* matters too: at the top of the
+function it is live across a call and lands in a saved register (`$s1`), and GCC
+duplicates the multiply into both arms of the preceding branch; declared at the
+point of use it lands in `$a0` and the multiply happens once, which is the
+original's shape.
+
+#### Honest attribution, because the headline number is confounded
+
+Automation went **90 → 182 functions**. Only **one** of those needed
+`expand_div`, and it is the same `func_800358FC` that was already done by hand.
+The rest of the gain is the corrected inventory from the `split_funcs` fixed
+point (966 → 1206 functions), which grew the ≤250-instruction candidate pool
+from 644 to 1127. The div fix is worth what it is worth on its own terms: it
+unblocks a class of **38 game functions holding 9,580 instructions (9.66% of the
+game)**, nearly all of them far too large for the automated pass to reach.
+
+```
+1206 game functions, 99,265 instructions
+ 317 matched (26.29% of functions, 4.28% of instructions)
+ executable and full disc image both byte-identical
+```
+
+#### Also this session
+
+* **autodecomp skips functions that already exist in `src/manual`.** It had
+  regenerated `func_800358FC` beside the hand-written one — the same
+  two-files-one-span collision that broke the tree once before. The hand-written
+  file wins: it carries the reasoning and its types were chosen, not inferred.
+* **`objdump -d` elides runs of all-zero words unless given `-z`.** `nop` is
+  0x00000000, so a by-eye comparison silently loses every nop. This cost a wrong
+  reading of a diff before it was noticed — the assembler output was right and
+  the disassembly was hiding it.
+* Two near-misses parked in `build/rejected/`, neither committed:
+  `func_80018C34` (4/49) and `func_8005F1B8` (3/49). Both are purely register
+  allocation with correct length and structure, so both are decomp-permuter
+  candidates rather than flag-search ones. `func_8005F1B8` is the better target
+  of the two.
+
+#### The duel save states now exist
+
+PCSX-Redux states for all four checkpoints are captured and live in
+`tools/states/` (gitignored — they contain game RAM):
+
+```
+SLUS01411.sstate1   main menu, "push start button"
+SLUS01411.sstate2   new game, name input
+SLUS01411.sstate3   first duel, deck build
+SLUS01411.sstate4   in a duel                     <- the one that was blocked
+```
+
+This clears the item this document listed as needing a human. Duel-path
+execution coverage no longer depends on DuckStation's non-portable format.
+
+One incidental fix worth recording, since it looked like a missing feature and
+was not: Redux ships with `gui.ShowMenu = false` in its config, which hides the
+menu bar entirely, so there is no File menu and no visible way to reach the save
+state slots. It is a config toggle, not a keybinding.
