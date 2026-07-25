@@ -202,7 +202,10 @@ typedef struct GameState {
     /* 0x0442 */ u16  unk_0442;
     /* 0x0444 */ s32  unk_0444;
     /* 0x0448 */ s32  unk_0448;
-    /* 0x044C */ char pad_044C[0x80];
+    /* 0x044C */ u16  unk_044C[0x40];/* func_80048658 indexes it with
+                                      * (id & 0x1F) + ((id & 0x100) != 0) * 32
+                                      * and treats 0xFFFF as "no entry", so it is
+                                      * 64 u16 slots, not opaque padding. */
     /* 0x04CC */ s32  unk_04CC;      /* read once only */
     /* 0x04D0 */ char pad_04D0[0x40];
     /* 0x0510 */ s16  unk_0510;
