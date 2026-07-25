@@ -1181,3 +1181,48 @@ The lesson is about the gate, not the workers. A non-matching file is not
 harmless work-in-progress — it silently replaces correct assembly with wrong
 code — and until now nothing checked for one except a whole-binary hash that
 cannot localise the fault.
+
+### 2026-07-25 — wave 2 complete: 234 functions, 3.36% of instructions
+
+All six workers in. Wave 2 hand-decompilation: 20 + 18 + 17 + 18 = **73
+functions**. Combined with automation and wave 1:
+
+| | |
+|---|---|
+| functions from C | **234** |
+| instructions | **3,334 / 99,265 (3.36%)** |
+| executable | `84747e64…` byte-identical |
+| disc image | `d5785a41…` byte-identical |
+| boot from in-duel state | passes |
+
+#### Two bugs of mine in split_funcs.py, found by the verifier
+
+**1. The output must accumulate, not be rewritten.** The tool reads `asm/`, which
+already reflects previously applied splits, so a freshly computed set contains
+only what is *still* merged. Writing it verbatim erased the 320 splits that made
+the current disassembly what it is, and left 104 source files referring to
+functions that no longer existed. It now unions with the existing file and is
+re-run to a fixed point.
+
+**2. The local-label regex never matched anything.** Those lines are *indented*
+(`  .L800708B0:`) and the pattern was anchored `^\.L`. So every internal branch
+target looked unlabelled, and 205 of 462 proposed splits were cutting real
+functions in half. Once a bad symbol exists splat renders that address as
+`func_X` rather than `.L X`, so the error is self-justifying on the next run.
+
+**My spot-check missed it because I picked the wrong example.** In
+`func_80040424` the label sits *on* the return instruction, not after it, so that
+case never exercised the broken path — it passed for the wrong reason. Two
+examples that both look convincing can still leave the actual code path untested.
+
+With the regex fixed, **257** genuine splits, not 462. Final inventory after
+iterating to a fixed point:
+
+```
+1206 game functions (from 678 originally reported, then 966)
+ 404 use $gp (45.1% of game code)
+ 436 leaf functions
+```
+
+`tools/verify_src.py` is what caught both bugs — it names the failing file, where
+the whole-binary hash only says something is wrong somewhere in 1.9 MB.
