@@ -9,6 +9,7 @@ louder and earlier failure than a hash mismatch at the end.
 Exit code 0 only when the rebuilt file is byte-identical to the original.
 """
 import hashlib
+import io
 import json
 import os
 import re
@@ -18,6 +19,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import match
 import split_asm
+from elftools.elf.elffile import ELFFile
+from elftools.elf.sections import SymbolTableSection
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "tools", "bin", "bin")
@@ -157,6 +160,26 @@ def main():
                 defined.add(m.group(1))
             for name, addr in sym_ref.findall(line):
                 referenced[name] = int(addr, 16)
+
+    # Decompiled C introduces references the disassembly never had: a
+    # gp-relative access appears in the asm only as `0x170($gp)`, but in C it
+    # becomes a named extern, so the name exists nowhere to be scanned for.
+    # Read the objects' own undefined symbols instead of guessing from text.
+    addr_name = re.compile(r"^(?:D|func|jtbl|jpt|B)_([0-9A-F]{6,8})$")
+    for _, obj, _ in c_objs:
+        try:
+            elf = ELFFile(io.BytesIO(open(obj, "rb").read()))
+        except Exception:
+            continue
+        for sec in elf.iter_sections():
+            if not isinstance(sec, SymbolTableSection):
+                continue
+            for sym in sec.iter_symbols():
+                if sym["st_shndx"] != "SHN_UNDEF" or not sym.name:
+                    continue
+                m = addr_name.match(sym.name)
+                if m:
+                    referenced[sym.name] = int(m.group(1), 16)
 
     missing = {k: v for k, v in referenced.items() if k not in defined}
     syms_ld = os.path.join(BUILD, "syms.ld")

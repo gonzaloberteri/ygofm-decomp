@@ -8,8 +8,80 @@
     "address through $gp need as_G 8, while functions that use %hi/%lo for a",
     "symbol of the same size need as_G 0. Recover per file with tools/flagsweep.py."
   ],
-  "default": { "opt": "-O3", "cc1_G": 8, "as_G": 0 },
+  "default": {
+    "opt": "-O3",
+    "cc1_G": 8,
+    "as_G": 0
+  },
   "files": {
-    "src/gp_probe.c": { "as_G": 8 }
+    "src/gp_probe.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80015D0C.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80035A58.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80058DCC.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80059AE0.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80059C18.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005F174.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005F180.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005F18C.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005F198.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005FB08.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80015CFC.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005C5C4.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80059C88.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80059CD0.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005FB14.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80042918.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005FAE4.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8003FF08.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8002C68C.c": {
+      "as_G": 8
+    },
+    "src/auto/func_8005F588.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80030250.c": {
+      "as_G": 8
+    },
+    "src/auto/func_80013898.c": {
+      "as_G": 8
+    }
   }
 }

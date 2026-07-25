@@ -632,3 +632,39 @@ the program correctly.
 6. **Maintenance asymmetry** — a symbol file and deterministic asm, versus an SDK
    provisioning step, version checks, a link-order search, and a failure mode
    that surfaces only as a hash mismatch.
+
+### 2026-07-24 — $gp automated; 54 functions from C
+
+`tools/autodecomp.py` now rewrites m2c's undeclared `saved_reg_gp` into a real
+extern at `gp + offset` (since `$gp` is a known constant) and tries both
+assembler `-G` values, keeping whichever reproduces the bytes. Over all 436
+candidates up to 80 instructions:
+
+| outcome | count |
+|---|---|
+| size-differs | 229 |
+| compile-failed | 69 |
+| **match** | **54** |
+| differs | 44 |
+| gp-unhandled | 32 |
+| m2c-failed | 8 |
+
+**54 functions build from C (up from 32), 22 of them needing `as_G 8`**, and both
+the executable and the full disc image remain byte-identical. Boot from the
+in-duel save state still passes.
+
+One more fix this forced: decompiled C introduces symbol references the
+disassembly never contained. A gp-relative access appears in the asm only as
+`0x170($gp)`, so scanning assembly text for names could never find `D_8009B078`.
+Symbol resolution now reads each object's own undefined-symbol table instead of
+inferring names from text.
+
+Progress, both metrics:
+
+```
+game functions:    678    matched  54  (7.96%)
+game instructions: 99265  matched 495  (0.50%)
+```
+
+The gap between 7.96% and 0.50% is the point made in the size-distribution entry
+above: what is matched so far is almost entirely the small end of the binary.

@@ -6,8 +6,10 @@ instructions, which is the honest measure of how much of the game is done.
 
 Cells are laid out strictly by address, so a given function keeps the same
 cell across runs and two maps can be diffed by eye.  $gp users get their own
-colour: they are not hard, they are blocked until the small-data layout is
-reconstructed, and lumping them in with plain TODO hides that.
+colour because they need extra handling -- the assembler run with -G8, and
+m2c's undeclared `saved_reg_gp` rewritten into a real extern at gp+offset.
+They are no longer *blocked*, as they were when this tool was written; the
+distinction is kept because it still predicts which functions need that path.
 
     py -3 tools/progress_map.py
     py -3 tools/progress_map.py --cell 8 --cols 96 --out docs/progress.png
@@ -155,11 +157,11 @@ def main():
 
     print("game functions:    %d total" % len(game))
     print("  matched:         %d (%.2f%%)" % (n_matched, pct(n_matched, len(game))))
-    print("  blocked on $gp:  %d (%.2f%%)" % (n_gp, pct(n_gp, len(game))))
+    print("  todo, uses $gp:  %d (%.2f%%)" % (n_gp, pct(n_gp, len(game))))
     print("  todo:            %d (%.2f%%)" % (n_todo, pct(n_todo, len(game))))
     print("game instructions: %d total" % ins_total)
     print("  matched:         %d (%.2f%%)" % (ins_matched, pct(ins_matched, ins_total)))
-    print("  blocked on $gp:  %d (%.2f%%)" % (ins_gp, pct(ins_gp, ins_total)))
+    print("  todo, uses $gp:  %d (%.2f%%)" % (ins_gp, pct(ins_gp, ins_total)))
     print("sdk functions:     %d (%d identified by signature, none decompiled)"
           % (len(sdk), named))
 
@@ -173,11 +175,11 @@ def main():
         % (n_matched, len(game), pct(n_matched, len(game))),
         "instructions: %d / %d matched (%.2f%%)"
         % (ins_matched, ins_total, pct(ins_matched, ins_total)),
-        "blocked on $gp: %d functions, %d instructions (%.2f%% of game code)"
+        "todo, uses $gp: %d functions, %d instructions (%.2f%% of game code)"
         % (n_gp, ins_gp, pct(ins_gp, ins_total)),
     ]
     legend = [(C_MATCHED, C_MATCHED, "matched"),
-              (C_GP, C_GP, "todo, blocked on $gp"),
+              (C_GP, C_GP, "todo, uses $gp"),
               (C_TODO, C_TODO_E, "todo")]
     if not args.no_sdk:
         legend.append((C_SDK, C_SDK, "Psy-Q SDK (not decompiled)"))
