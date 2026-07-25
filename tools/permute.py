@@ -19,6 +19,7 @@ compile.sh, per the permuter's documented contract (`./compile.sh in.c -o out.o`
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -39,9 +40,36 @@ def permuter_env():
     `mipsel-none-elf-objdump`, the same binutils build, so tools/bin/bin carries
     an alias and simply needs to be on PATH.
     """
+    binbin = os.path.join(REPO, "tools", "bin", "bin")
     env = dict(os.environ)
-    env["PATH"] = (os.path.join(REPO, "tools", "bin", "bin") + os.pathsep
-                   + env.get("PATH", ""))
+    parts = [binbin]
+
+    # The permuter preprocesses with a bare `cpp` (src/preprocess.py).  Our
+    # binutils/gcc build only ships `mipsel-none-elf-cpp`, and tools/bin is
+    # gitignored and assembled by hand, so a fresh checkout has no `cpp` at all
+    # and the permuter dies before compiling anything.  Its objdump lookup does
+    # already know the `mipsel-none-elf-` name, so cpp is the only alias needed.
+    ext = ".exe" if os.name == "nt" else ""
+    alias = os.path.join(binbin, "cpp" + ext)
+    real = os.path.join(binbin, "mipsel-none-elf-cpp" + ext)
+    if not os.path.exists(alias) and os.path.exists(real):
+        shutil.copyfile(real, alias)
+        shutil.copymode(real, alias)
+
+    # The permuter fork shells compile.sh out to `bash`, because Windows cannot
+    # exec a .sh directly.  Git for Windows provides one but does not put it on
+    # the *Windows* PATH -- only inside its own shell -- so a plain
+    # subprocess.run("bash") fails with WinError 2 and the permuter dies before
+    # compiling anything.  Look it up rather than assuming the caller has it.
+    if os.name == "nt" and shutil.which("bash", path=env.get("PATH")) is None:
+        for cand in (r"C:\Program Files\Git\bin",
+                     r"C:\Program Files\Git\usr\bin",
+                     r"C:\Program Files (x86)\Git\bin"):
+            if os.path.exists(os.path.join(cand, "bash.exe")):
+                parts.append(cand)
+                break
+
+    env["PATH"] = os.pathsep.join(parts + [env.get("PATH", "")])
     return env
 
 
