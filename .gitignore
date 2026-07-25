@@ -10,11 +10,11 @@ config/disc.xml
 undefined_syms_auto.txt
 undefined_funcs_auto.txt
 
-# vendored toolchain and third-party checkouts
+# Vendored proprietary/binary toolchain: mipsel-none-elf binutils, mkpsxiso and
+# the Psy-Q SDK.  Supply your own -- see the README.
 tools/bin/
-tools/maspsx/
-tools/asm-differ/
-tools/m2c/
+
+# tools/maspsx, tools/asm-differ and tools/m2c are git submodules, not ignores.
 
 __pycache__/
 *.pyc
