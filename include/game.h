@@ -323,7 +323,14 @@ typedef struct GameState {
  * Only offset 0x00 is established (func_8004B6E8 stores a byte there). */
 typedef struct SoundChannel {
     /* 0x00 */ u8   unk_00;         /* func_8004B6E8(index, value) writes this */
-    /* 0x01 */ char pad_01[0x17];
+    /* 0x01 */ char pad_01[0x03];
+    /* 0x04 */ u8   unk_04;         /* func_8004B374 clears it when a note on
+                                     * this channel is released */
+    /* 0x05 */ char pad_05[0x02];
+    /* 0x07 */ u8   unk_07;         /* func_8004A43C compares it against the
+                                     * request's unk_1A and feeds it to
+                                     * func_8004A3BC -- a note or key number */
+    /* 0x08 */ char pad_08[0x10];
 } SoundChannel;                      /* size 0x18 */
 
 /* 0x28-byte record, 20 of them at SoundWork+0x180. */
@@ -331,7 +338,10 @@ typedef struct SoundVoice {
     /* 0x00 */ char pad_00[0x03];
     /* 0x03 */ u8   unk_03;         /* tested as `>> 4`, so the high nibble is a
                                      * separate field from the low nibble */
-    /* 0x04 */ char pad_04[0x09];
+    /* 0x04 */ char pad_04[0x01];
+    /* 0x05 */ u8   unk_05;         /* func_8004B374 matches on unk_03 and this
+                                     * together when releasing a note */
+    /* 0x06 */ char pad_06[0x07];
     /* 0x0D */ u8   unk_0D;         /* must be non-zero for the voice to be
                                      * pushed to the SPU */
     /* 0x0E */ char pad_0E[0x06];
