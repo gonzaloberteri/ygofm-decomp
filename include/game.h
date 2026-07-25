@@ -395,7 +395,10 @@ typedef struct SoundWork {
     /* 0x508 */ u8   unk_508;
     /* 0x509 */ u8   unk_509;
     /* 0x50A */ char pad_50A[0x02];
-    /* 0x50C */ s32  unk_50C;
+    /* 0x50C */ void (*unk_50C)(void);
+                                   /* a callback, not an integer: func_8004B734
+                                    * loads it and does `jalr $v0` when non-null.
+                                    * Same width as the s32 it replaces. */
     /* 0x510 */ s16  unk_510;      /* voice count.  Read signed 26 times as the
                                     * `i < unk_510` bound of the voices[] loops;
                                     * func_80049600 refuses to set it to 0 or to

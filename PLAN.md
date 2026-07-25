@@ -1753,3 +1753,51 @@ and `-O3`, five hand-written source forms, and the permuter. All of them stop at
 the same three instructions, and all three are the same choice of `$v0` where the
 original uses `$v1` for the product feeding the division. That is the residual
 wall, stated as precisely as it can be.
+
+### 2026-07-25 — tools/sidebyside.py, and three idioms from the sound driver
+
+`match.py` reports "size 280, original 288" when the instruction count is wrong,
+which is the case where the useful question — *which* instruction went missing —
+is exactly what it cannot answer. `tools/sidebyside.py` prints the two streams
+aligned. It had been hand-rolled four times in one session before being made a
+tool, and it passes `objdump -z` so nops are not silently elided.
+
+#### Three separate idioms, each worth one or two instructions
+
+Found on `func_8004B734`, the sound driver's tick, which went from 70 to 71 of
+72 instructions as each was applied:
+
+* **`cc1_G=8` is what produces the assembler's load macro.** The original reads
+  `D_8009B458` as `lui $v1,%hi(sym); lw $v1,%lo(sym)($v1)` — the *same* register
+  for the address and the value, which is gas expanding `lw $v1,sym`. With
+  `cc1_G=0` cc1 emits its own `lui` into a *different* register, and GCC then
+  hoists that address into a saved register and reuses it across the function,
+  replacing every reload with `lw $v1,0($s1)`. That is a whole-function
+  structural difference from one flag. It corroborates the `cc1_G=0` tell
+  recorded earlier — "the `%hi` and the loaded value landing in different
+  registers" — from the other direction.
+* **`-fno-strength-reduce` stops loop reversal.** `for (i = 0; i < 8; i++)` with
+  `i` unused in the body gets reversed into a countdown by `check_dbra_loop` in
+  GCC's strength-reduction pass: `addiu $s0,$s0,-1; bgez $s0`. The original
+  counts up (`addiu $s0,$s0,1; slti $v0,$s0,8; bnez`). Suppressing the pass
+  reproduces it. Worth reaching for whenever the original counts up and we count
+  down.
+* **`-fno-schedule-insns2` and the prologue interleave are still in tension.**
+  With sched2 off the instruction *count* is right; with it on the *prologue* is
+  right — the original hoists the `lui/lw` of the work-area pointer above
+  `addiu $sp`, which only sched2 does. `-Os` does not resolve it here, so the
+  third allocation mode is not a universal answer to this class.
+
+#### Not matched, and precisely why
+
+`func_8004B734` is **71 of 72 instructions** and parked in `build/rejected/`.
+Everything matches except one delay slot: the original leaves `nop` in the
+loop-back branch's delay slot and materialises the return value afterwards
+(`addu $v0,$zero,$zero`), where GCC hoists that zeroing into the slot. Three
+source forms for the return value change nothing, and `-fno-delayed-branch`
+overshoots by nine instructions.
+
+This is a *different* residual from the register-allocation class: the permuter
+cannot help, because no rewriting of C adds a `nop`. It is a delay-slot filling
+decision, and the next place to look is `reorg.c` in the GCC tree rather than
+more source shapes.
