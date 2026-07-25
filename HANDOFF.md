@@ -63,7 +63,13 @@ PY tools/funcs.py --candidates       # pick targets
 PY tools/sample.py --state 4        # hotness ranking from the in-duel state
 PY tools/sample.py --report         # reprint the last ranking
 PY tools/trace.py --state 4         # breakpoint coverage (slow: ~4 s/frame)
+PY tools/sidebyside.py src/manual/X.c   # our output aligned against the original
 ```
+
+**Watch what you leave running.** `tools/permute.py --jobs N` spawns roughly 6N
+processes once cc1 and maspsx children are counted -- `--jobs 14` reached 88
+processes and 1.2 GB. Use `--jobs 4` unless the machine is idle, and stop it when
+it plateaus rather than leaving it going across a whole session.
 
 ## Current state
 
@@ -107,42 +113,51 @@ same ones independently, which was wasted effort.
    four workers averaged ~12–20 matches each. The technique that actually works is
    disassembling your own object with `mipsel-none-elf-objdump -d` and reading it
    beside `asm/code_002800.s` — not sweeping flags blind.
-2. **The evidence-backed targets.** Sampling the in-duel save state named 11
-   functions that actually execute, 1,179 instructions, none decompiled:
-   `func_8004ADE8` (355), `func_8004C114` (195), `func_8004AAFC` (122),
-   `func_8004C8C8` (102), `func_8004A0FC` (96), `func_800478EC` (95),
-   `func_80049FB4` (82), `func_8004B374` (74), `func_8004B734` (72),
-   `func_8004A43C` (55), `func_8004C84C` (31). They are one coherent module --
-   the **sound driver** behind `D_8009B458` -- so they are worth doing together
-   as a translation unit. `func_8005BFC8` (139) and `func_80043960` (155) came
-   from the earlier boot sampling and still stand.
-   `PY tools/sample.py --state 4 --report` reprints the list.
+2. **Unblock the sound driver: why does the original reload `D_8009B458`?**
+   This is the highest-leverage unknown in the project. Nine of the eleven
+   evidence-backed duel targets reload that pointer from memory *inside* their
+   loops; GCC 2.95.2 hoists the load out under everything tried (all three
+   allocation modes, both `cc1_G` values, eight `-fno-*` pass flags, a volatile
+   pointer, capturing it in the loop condition). **1,102 of 1,279 instructions
+   sit behind it** -- six times more code than any individual near-miss.
+   GCC is not wrong to hoist: a `u16` store through a `SoundVoice *` cannot
+   alias a `SoundWork *` variable. So the question is what the original build
+   did differently. `loop.c` / `gcse.c` in `tools/ref/gcc-2.95.2/` is the place
+   to look, the same way `local-alloc.c` answered the `-Os` question.
 
-3. **The register-allocation class, now with better candidates.** ~12 known
-   near-misses differ only by register allocation. Three fresh ones from this
-   session are in `build/rejected/` with correct length and structure:
-   `func_8005F1B8` (3/49 -- the best permuter candidate in the repo),
-   `func_80018C34` (4/49), and `func_8004C84C`. Do not sweep more flags; a
-   30-combination sweep separated none of them. `tools/ref/gcc-2.95.2/gcc/
-   local-alloc.c` is on disk.
+3. **The two tractable duel targets**, which do *not* have that blocker:
+   `func_800478EC` (95 insns, untouched) and `func_80049FB4` (82, parked at the
+   exact length and instruction sequence, 53 words differing on registers).
+   `PY tools/sample.py --state 4 --report` reprints the ranking.
 
-4. **Pad input under Lua, to reach duel logic.** The duel sampling above is the
-   *idle* loop: no controller input is supplied, so summon, attack and fusion
-   logic are still unmeasured. Driving the pad from `tools/sample.lua` is the
-   cheapest way to extend coverage into the code this project most wants to read.
+4. **Pad input under Lua, to reach real duel logic.** Today's duel coverage is
+   the *idle* loop -- no controller input is supplied, so it is the sound
+   driver and the per-frame render path. Summon, attack and fusion logic are
+   still unmeasured. Driving the pad from `tools/sample.lua` is the cheapest way
+   into the code this project most wants to read.
 
-5. **`include/game.h`** exists with 17 machine-checked structs, plus
-   `SoundVoice.unk_1E`. New work should use it. **Do not retrofit existing
-   matching files onto it** -- `-G8` decides addressing from the *declaration's*
-   size and `volatile` changes instruction count, so several files depend on
-   their local declaration exactly as written.
+5. **The register-allocation class.** Parked in `build/rejected/`, all with
+   correct structure: `func_8005F1B8` (3/49), `func_80018C34` (4/49),
+   `func_80049FB4` (53/82). Try `-Os` first -- it is a distinct allocation mode,
+   not a size heuristic. Do not sweep more flags. The permuter plateaus at score
+   10 on this class and **some of its winning variants are semantically wrong**,
+   so read anything it produces before using it.
 
-6. **Execution coverage, the expensive half.** Breakpoint coverage under
-   `-interpreter` still does not scale: ~4 s/frame with 1206 armed. Batching
-   ~100 per pass over 13 passes would give true coverage of a restored state,
-   which is now affordable per-pass because the state load skips the boot.
-   Static call-graph reachability from `__SN_ENTRY_POINT` remains the cheap
-   alternative and needs no emulator.
+6. **`func_8004B734` is 71 of 72 and is a different problem.** The single
+   residual is a delay slot: the original leaves `nop` in the loop-back branch
+   and materialises the return value after it, where GCC hoists the zeroing into
+   the slot. The permuter cannot help -- no rewriting of C adds a `nop`.
+   `reorg.c` is the place to look.
+
+7. **`include/game.h`** has 17 machine-checked structs, plus `SoundVoice.unk_1E`
+   and `SoundWork.unk_50C` as a function pointer. New work should use it. **Do
+   not retrofit existing matching files onto it** -- `-G8` decides addressing
+   from the *declaration's* size and `volatile` changes instruction count.
+
+8. **Execution coverage, the expensive half.** Breakpoints under `-interpreter`
+   cost ~4 s/frame with 1206 armed. Batching ~100 per pass is now affordable
+   per-pass because a save state skips the boot. Static call-graph reachability
+   from `__SN_ENTRY_POINT` remains the cheap alternative.
 
 ### Resolved since the last handoff, do not redo
 
@@ -154,6 +169,17 @@ same ones independently, which was wasted effort.
   source named the divisor in a *variable*, declared at its point of use.
 * **The duel save states exist**, in `tools/states/` (gitignored). This was the
   item marked "needs a human".
+* **The register-allocation wall is explained.** `local-alloc.c` widens a
+  quantity's lifetime to avoid reusing a just-dead register, gated on
+  `flag_schedule_insns_after_reload && !optimize_size`. So there are **three**
+  modes: `-O2` (sched2 + widening), `-Os` (sched2, no widening), and
+  `-fno-schedule-insns2` (neither). PLAN's "no flag separates them" is retracted.
+* **`tools/permute.py` was broken** -- it passed neither `cc1_G` nor
+  `expand_div`, so anything not passed fell back to defaults. Base scores from
+  before that fix are meaningless.
+* **`tools/sidebyside.py` exists** for when `match.py` can only say the size is
+  wrong. Use it rather than hand-rolling an objdump comparison (and note
+  `objdump` hides `nop`s without `-z`).
 
 ## Hard rules
 
