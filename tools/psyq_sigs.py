@@ -218,13 +218,21 @@ def match_signatures(sigs, regions, payload):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true")
-    ap.add_argument("--libdir", default=None,
+    ap.add_argument("--libdir", action="append", default=None,
                     help="SDK library directory (ELF .a or native .LIB/.OBJ)")
     args = ap.parse_args()
 
-    libdir = args.libdir or LIBDIR
-    sigs = build_signatures(libdir)
-    print("built %d signatures from %s" % (len(sigs), os.path.basename(libdir)))
+    # Neither release is a superset of the other: 4.6 and 4.7 differ in 34
+    # objects, and the game contains 4.6's variant of some (libgpu/font,
+    # libspu/s_sr) and 4.7's of others (libds/dssys_1, dssys_2).  Konami's LIB
+    # directory was evidently a base release with individual libraries updated
+    # in place, so the union names more than either alone.
+    libdirs = args.libdir or [LIBDIR]
+    sigs = []
+    for d in libdirs:
+        part = build_signatures(d)
+        sigs += part
+        print("built %d signatures from %s" % (len(part), os.path.basename(d)))
 
     regions = json.load(open(os.path.join(REPO, "config", "regions.json")))
     payload = open(os.path.join(REPO, "disc", "SLUS_014.11"), "rb").read()[0x800:]

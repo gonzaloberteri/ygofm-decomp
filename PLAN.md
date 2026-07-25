@@ -45,10 +45,16 @@ $Id: bios.c,v 1.86  1997/03/28 07:42:42 makoto Exp yos $
 $Id: sys.c,v  1.140 1998/01/12 07:52:27 noda  Exp yos $
 ```
 
-These are **Psy-Q runtime RCS tags**. `sys.c v1.140 / 1998-01-12` pins the SDK to the
-Psy-Q 4.x line (4.0–4.4 window). This is worth a lot: every function that came from
+These are **Psy-Q runtime RCS tags**. This is worth a lot: every function that came from
 `libapi/libgpu/libgte/libspu/libcd/libsn` can be identified by **signature match against
 the real Psy-Q `.lib` objects** instead of being decompiled by hand.
+
+> **Correction (see the status log).** This section originally claimed
+> `sys.c v1.140 / 1998-01-12` "pins the SDK to the Psy-Q 4.x line (4.0–4.4
+> window)". That was wrong. All three revisions are present verbatim in **both**
+> 4.6 and 4.7 — 4.6's library members are all dated 1999-07-23 — so the RCS tags
+> are a *lower bound only* and pin nothing. The release was established instead
+> by measuring per-object coverage.
 
 Leaked original source paths (from `assert` / debug format strings):
 
@@ -548,3 +554,81 @@ It is **a few dozen very large functions**, each of which needs real structure
 recovery -- types, struct layouts, control flow -- and none of which m2c will
 hand over for free. That is worth knowing before mistaking a rising
 function-count percentage for progress.
+
+### 2026-07-24 — Psy-Q release pinned; two earlier claims retracted
+
+**Verdict: do not link the genuine SDK libraries.** Reasons below.
+
+#### Which release
+
+The RCS tags do not identify it — all three revisions appear in both 4.6 and 4.7
+(4.6's members are dated 1999-07-23). Measuring coverage of the SDK region
+instead, with a native `LIB\x01`/`LNK\x02` reader (`tools/psyq_lib.py`) so 4.6's
+unconverted archives could be used:
+
+| release | objects | bytes | share of region |
+|---|---|---|---|
+| 4.7 (ELF) | 254 | 114,684 | 89.4% |
+| 4.6 (native) | 258 | 109,044 | 85.0% |
+| **union** | **281** | **117,948** | **92.0%** |
+
+**Neither release is a superset.** Of 1,942 objects in both, 34 differ, and the
+game contains 4.6's variant of some (`libgpu/font`, `libspu/s_sr`, 100% of words)
+and 4.7's of others (`libds/dssys_1`, `dssys_2`, 9,520 B, 100% of words — 4.6
+scores 4.5%). So Konami's `LIB` directory was a base release with individual
+libraries updated in place, which is also what rules out 4.4/4.5: they are
+strictly older than 4.7's libds. `config/symbol_addrs.txt` now uses the union:
+**412 named functions**, 22.6% of all code.
+
+#### The residual is fully accounted for
+
+Of 10,304 bytes unmatched, **9,504 are not code at all** — trailing rodata at
+`0x800906E0..0x80092C00` (69% zeros, containing `\DATA\WA_MRG.MRG;1` and the SCE
+copyright string) that the region classifier absorbed into the code region. The
+remaining **800 bytes are 50 individual 16-byte library objects**, all BIOS
+trampolines and GTE register accessors, excluded solely by `MIN_INSNS = 5`.
+
+So **99.33% of the actual SDK code is identified and the rest is explained.**
+Nothing is missing from the archives and nothing was customised by Konami.
+
+#### Retraction: SDK code does exist below 0x80073704
+
+An earlier entry claimed "every one of the 401 SDK symbols lies above
+`0x80073704`, and none below it". **Wrong.** `noheap.obj` matches at
+`0x800129D8` — the PS-EXE entry point — at 94/94 words, giving
+`__SN_ENTRY_POINT`, `__main` and `__do_global_dtors`. Corroboration: the `$gp`
+setup at `0x80012A54` is `__SN_ENTRY_POINT + 0x7C`. The real layout is crt0
+first, then the game, then the libraries:
+
+```
+0x800129D8 .. 0x80012B50   Psy-Q crt0
+0x80012B50 .. 0x80073704   Konami game code
+0x80073704 .. 0x80092C00   Psy-Q libraries
+```
+
+Worse, splat emits those 376 bytes as `dlabel D_800129C4` raw `.word` data
+rather than instructions — verified by hand: `0x800129D8` decodes as
+`lui/addiu/lui/addiu/sw/addiu/sltu`, a `.bss`-clearing loop. The bytes are right
+so the hash never complained, but **the disassembly is wrong about the program's
+entry stub.** This is the second time a claim of mine survived the hash gate
+while being false; the gate proves byte equality, not that the tree describes
+the program correctly.
+
+#### Why not to link the real libraries
+
+1. **Zero information gain** — the region is already named and excluded from the
+   decomp queue; a `.a` member is no more readable than the assembly.
+2. **It would not even remove the assembly** — 800 B of stubs and 9,504 B of
+   rodata stay regardless, so the result is a hybrid with more moving parts.
+3. **Quantified byte-identity risk** — 5,851 relocations would have to resolve
+   exactly, and 67 of the matched objects carry 49,048 B of `.data`/`.bss`/
+   `.rdata`/`.sbss` that would also have to land at their original addresses,
+   with one SHA-1 bit as the only oracle for a layout search that size.
+4. **No single archive reproduces it** — 3,072 B exist only in 4.6, 9,520 B only
+   in 4.7, so the tree would link a hand-curated two-release mixture, which is
+   *less* honest about the original build, not more.
+5. **Licensing and self-containment** — proprietary SCE binaries; the build would
+   stop being reproducible from a clone.
+6. **Maintenance asymmetry** — a symbol file and deterministic asm, versus an SDK
+   provisioning step, version checks, a link-order search, and a failure mode
+   that surfaces only as a hash mismatch.

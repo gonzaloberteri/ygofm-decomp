@@ -74,8 +74,22 @@ def merge(intervals):
     return out
 
 
-def coverage(libdir, payload, regions):
-    sigs = build_signatures(libdir)
+def coverage(libdirs, payload, regions):
+    """libdirs may be one directory or several; several means take the union.
+
+    The two releases on hand are 98% identical but each contains a handful of
+    objects the game matches and the other does not, so the union is the
+    honest ceiling on what signature matching can identify.
+    """
+    if isinstance(libdirs, str):
+        libdirs = [libdirs]
+    sigs = []
+    for d in libdirs:
+        tag = os.path.basename(d.rstrip("/\\")) if len(libdirs) > 1 else None
+        for s in build_signatures(d):
+            if tag:
+                s = (s[0], "%s:%s" % (tag, s[1])) + s[2:]
+            sigs.append(s)
     matches, ambiguous, amb_exports = match_signatures(sigs, regions, payload)
     return sigs, matches, ambiguous
 
@@ -327,7 +341,8 @@ def compare(dir_a, dir_b, payload, regions):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--libdir", default=LIBDIR)
+    ap.add_argument("--libdir", default=[LIBDIR], nargs="+",
+                    help="one directory, or several to take the union")
     ap.add_argument("--compare", nargs=2, metavar=("DIR_A", "DIR_B"))
     ap.add_argument("--top", type=int, default=40)
     ap.add_argument("--rejects", action="store_true")
@@ -341,8 +356,8 @@ def main():
         return 0
 
     if args.rejects:
-        stats, lost = reject_stats(args.libdir)
-        print("object triage for %s:" % args.libdir)
+        stats, lost = reject_stats(args.libdir[0])
+        print("object triage for %s:" % args.libdir[0])
         for k in sorted(stats, key=lambda k: -stats[k]):
             print("  %-34s %5d objects  %8d .text bytes"
                   % (k, stats[k], lost.get(k, 0)))
