@@ -25,6 +25,36 @@ def sha1_file(path):
     return h.hexdigest()
 
 
+def locked(path):
+    """True if another process holds the file open.
+
+    An emulator left holding build/ygofm.bin makes mkpsxiso fail with nothing but
+    "Cannot open or create output image file", which says nothing about why.
+    Redux in particular outlives a killed run and keeps the image open.
+
+    This has to ask for *exclusive* access to see it.  `open(path, "r+b")` and a
+    rename both succeed while the other process holds a shared read handle --
+    both were tried and neither detected a lock that was demonstrably there --
+    so on Windows go straight to CreateFileW with dwShareMode 0, which is what
+    mkpsxiso's own truncating open effectively needs.
+    """
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    GENERIC_READ, GENERIC_WRITE = 0x80000000, 0x40000000
+    OPEN_EXISTING, INVALID = 3, ctypes.c_void_p(-1).value
+    CreateFileW = ctypes.windll.kernel32.CreateFileW
+    CreateFileW.restype = wintypes.HANDLE
+    h = CreateFileW(str(path), GENERIC_READ | GENERIC_WRITE, 0, None,
+                    OPEN_EXISTING, 0, None)
+    if h == INVALID:
+        return True
+    ctypes.windll.kernel32.CloseHandle(h)
+    return False
+
+
 def main():
     built_exe = os.path.join(REPO, "build", "SLUS_014.11")
     if not os.path.exists(built_exe):
@@ -32,6 +62,17 @@ def main():
 
     shutil.copyfile(built_exe, os.path.join(REPO, "iso", "SLUS_014.11"))
     print("staged build/SLUS_014.11 -> iso/SLUS_014.11")
+
+    # An emulator left holding build/ygofm.bin makes mkpsxiso fail with nothing
+    # but "Cannot open or create output image file", which says nothing about
+    # why.  Redux in particular can outlive a killed run and keep the image open
+    # -- and it does not always still answer to its own process name, so it is
+    # easy to believe nothing is running.  Name the real problem instead.
+    if os.path.exists(OUT + ".bin") and locked(OUT + ".bin"):
+        sys.exit("%s.bin is locked by another process -- an emulator is "
+                 "probably still holding it. Close PCSX-Redux and retry.\n"
+                 "Note it may not answer to `pcsx-redux`: the trace and sample "
+                 "runs leave a process named `pcsx-redux.main`." % OUT)
 
     r = subprocess.run([MKPSXISO, "-y", "-q", "-o", OUT + ".bin", XML],
                        capture_output=True, text=True)

@@ -12,6 +12,9 @@ PY = os.path.join(REPO, ".venv", "Scripts", "python.exe")
 
 STEPS = [
     ("extract disc",      [PY, "tools/extract_disc.py"]),
+    # iso/ and config/disc.xml are gitignored and are what make_iso.py rebuilds
+    # from, so a fresh clone has to produce them before it can get that far.
+    ("stage iso",         [PY, "tools/stage_iso.py"]),
     ("classify regions",  [PY, "tools/map_regions.py"]),
     ("generate config",   [PY, "tools/gen_splat_config.py"]),
     ("split",             [PY, "-m", "splat", "split", "config/splat.yaml"]),
