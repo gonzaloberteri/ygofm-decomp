@@ -1309,3 +1309,42 @@ cc1's own guard.
 
 `tools/permute.py --keep-base` now exists, because `--run` re-scaffolded and
 discarded an already-improved base.
+
+### 2026-07-25 — PCSX-Redux tracing: pipeline works, breakpoints need the interpreter
+
+Goal: stop choosing decompilation targets by size and address order, and start
+choosing by what the boot-to-duel path actually executes.
+
+`tools/trace.lua` + `tools/trace.py` arm an execution breakpoint on every game
+function and record first-hit frames. The plumbing now works and the game
+genuinely runs under Redux — its own debug strings appear in the log
+(`g_SDValue->s_stGlobalHdrSE.s_wSD_NUM_SEGROUP:18`, `CD_init:addr=800937c0`),
+which is also independent evidence the rebuilt image boots on a second emulator.
+
+**Five things had to be found, four of them silent failures:**
+
+1. **`-run` is required.** Without it Redux boots, sits paused and exits. Looked
+   like the script failing.
+2. **`PCSX.log`, not `print`.** `print` goes to the Lua console, which `-no-ui`
+   does not have, so all output vanished.
+3. **stdin must stay open.** With `-no-ui` the TUI reads stdin and an immediate
+   EOF makes it quit before the game runs.
+4. **LuaJIT allows only ~1024 FFI callbacks, and `PCSX.addBreakpoint` creates one
+   per breakpoint.** 1206 breakpoints failed with "too many callbacks" — and
+   because `-dofile` swallows load errors, *completely silently*. Found only by
+   wrapping the script in `pcall` via `-exec`. Fixed by calling
+   `C.addBreakpoint` through raw FFI with a **single shared callback**, which
+   works because the callback already receives the address.
+5. **`-exec` runs after every `-dofile`**, so a global set by `-exec` is still
+   nil when the script reads it. The frame limit now comes from the environment.
+
+**The open problem: the x86-64 dynarec does not check execution breakpoints.**
+1206 armed breakpoints yield 0 hits over 300 frames while the game visibly runs.
+`-debugger` alone does not change this. `-interpreter` does observe them but is
+far slower — 330 s reached only BIOS `KERNEL SETUP`, never the game. A long
+unattended interpreter run is in progress to establish whether it is merely slow
+or unusable.
+
+Also of note: the real BIOS is now used (`SCPH-1001`, copied from DuckStation).
+Redux was falling back to OpenBIOS, a reimplementation — a trace taken under it
+would not have been evidence about the real boot path.
