@@ -2030,3 +2030,73 @@ Also recorded: `SoundWork+0x4C0` is confirmed `SpuVoiceAttr` — `mask = 0x10`
 `+0x4D4`, i.e. `attr.pitch` at attr+0x14, which is where libspu puts it. The
 `0x10` is materialised once and used both as the stored mask and as the `sllv`
 shift amount, which is why the shift is register-form rather than `sll ..,16`.
+
+### 2026-07-25 — the tree builds off Windows; one binary is the whole problem
+
+Motivated by wanting to add an M4 MacBook Air (10 cores, 24 GB) to the pool
+alongside `.180` and `.209`. Findings, and one retraction of a README claim.
+
+**Retracted: "Windows is required."** It is not, and the reason it looked
+required was mostly cosmetic. Of the ~30 tools, everything that pinned the tree
+to Windows was `.exe` suffixes, `.venv\Scripts\`, one machine's `Downloads`
+path, and Ghidra/JDK directory names carrying a version that was only ever
+right locally. All of that now resolves through `tools/toolchain.py`.
+
+**Not retracted, and load-bearing: `CC1PSX.EXE` is genuinely irreplaceable.**
+It is a 32-bit i386 PE (confirmed: `PE32 executable (console) Intel 80386`).
+Its codegen is the thing being reproduced, so it cannot be swapped for a
+rebuilt GCC 2.95.2 — and none exists anyway for 4.6. `nocato/homebrew-psyq`
+did rebuild Psy-Q **4.4**'s cc1 from source, byte-identical against the
+mgs_reversing tree, but 4.6 is not covered. `decompals/old-gcc`'s
+`gcc-2.95.2-psx` is a *different* compiler from `psyq4.6` — decomp.me lists
+them separately — so it is not a substitute.
+
+**Off Windows the loader is `wibo`, not Wine, and not a container.** wibo is a
+Win32 loader rather than an emulator: it maps the PE and calls into it, so on
+Apple Silicon the x86 runs through Rosetta 2 in-process. This is what decomp.me
+uses for this exact compiler; they removed Wine entirely.
+
+Measured here on an M4, same 32-bit test binary, so the numbers are comparable:
+
+```
+  wibo, native macOS         30 ms start-up      0.25 s on the benchmark loop
+  Wine, docker linux/amd64  256 ms               2.7 s
+```
+
+**The container result is a trap worth recording.** An `amd64` image on Docker
+Desktop looks Rosetta-accelerated, and for x86-64 ELF it is — a native `gcc
+--version` in that container returns in 0.01 s. But Docker registers Rosetta
+for x86-64 only and falls back to QEMU for i386, and `wine32` is an i386 ELF.
+So the compiler — and only the compiler — silently runs under QEMU while
+everything around it runs at full speed. An arm64 image cannot run the PE at
+all without box86/FEX. `tools/docker/` is kept, now also using wibo, for a
+reproducible Linux box; it is not the path on a Mac.
+
+**Toolchain sources off Windows.** PSn00bSDK publishes its binutils bundle for
+Windows and Linux only — there is no macOS build to unzip into `tools/bin/`.
+`tools/setup_unix.sh` therefore builds **binutils 2.40** and **gcc 12.3.0's
+`cpp`** from source for `mipsel-none-elf`, both pinned to what the Windows side
+uses. Homebrew's `mipsel-linux-gnu-binutils` is 2.46 *and* a hosted target
+triple; PCSX-Redux's formula builds gcc 16. Neither pin is fussiness — the
+assembler and the preprocessor are both inputs to the hash, and this is a tree
+where a single dropped `.short` was caught by nothing but the SHA-1.
+
+Two macOS-specific build failures, recorded because they cost time: binutils
+2.40 needs `--with-system-zlib` (its bundled zlib fails to detect `fdopen`,
+`#define`s it to `NULL`, and then collides with the real declaration in the
+current SDK), and both builds need `MAKEINFO=true` because macOS has no
+`makeinfo` and the doc build dies with `Error 127` well after the binaries are
+finished.
+
+**Unproven, and it is the thing that matters.** Whether `CC1PSX.EXE` under wibo
+emits the *same bytes* as it does under WOW64 is an empirical question about a
+proprietary binary, and nothing above answers it. It needs the SDK on the Mac
+and a `tools/verify_src.py` run compared against `.180`. Until that has been
+done, a match found on a non-Windows host is a candidate, not a result — the
+same rule already in force for `.209`.
+
+One concrete suspect if it does diverge: decomp.me pipes preprocessed source
+through `unix2dos` before handing it to `CC1PSX.EXE`. A 1990s Windows compiler
+reading LF-only input is exactly the kind of difference that would show up as a
+line-number shift or a scheduling change rather than an obvious failure. This
+tree does not normalise line endings.

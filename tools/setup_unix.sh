@@ -77,24 +77,56 @@ else
         --disable-multilib --disable-nls --disable-werror \
         --disable-gdb --disable-sim --disable-readline \
         --with-system-zlib
-    make -j"$JOBS"
-    make install
+    # MAKEINFO=true: binutils builds its own info manuals, macOS has no
+    # `makeinfo`, and the build dies with "Error 127" from doc/bfd.info long
+    # after the parts anyone here cares about have compiled.  `true` stubs the
+    # doc build out; the binaries are unaffected.
+    make -j"$JOBS" MAKEINFO=true
+    make install MAKEINFO=true
     cd "$BIN"
     # The build tree is ~1 GB and nothing needs it once installed.
     rm -rf "$work"
     echo "==> binutils: $("$BIN/bin/mipsel-none-elf-as" --version | head -1)"
 fi
 
-# `cpp` is part of gcc, not binutils, and tools/cc.py needs it for the
-# preprocessing stage.  The permuter also wants a bare `cpp` on PATH.
-if [ ! -x "$BIN/bin/mipsel-none-elf-cpp" ]; then
-    echo
-    echo "!!  mipsel-none-elf-cpp is missing -- it ships with gcc, not binutils."
-    echo "    Either build gcc for the same target, or symlink a host cpp:"
-    echo "      ln -s \"\$(command -v cpp)\" \"$BIN/bin/mipsel-none-elf-cpp\""
-    echo "    The second is only safe if that cpp is a GNU cpp; the tree's"
-    echo "    defines are supplied explicitly by tools/cc.py, so it does not"
-    echo "    rely on the target's built-in macros."
+# ----------------------------------------------------------------- cpp
+# `cpp` ships with gcc, not binutils, and tools/cc.py needs it for the
+# preprocessing stage.  Pinned to 12.3.0 to match the PSn00bSDK bundle the
+# Windows side uses, rather than the newest release: preprocessor output is an
+# input to the hash gate, so "a cpp" is not good enough, it has to be the same
+# cpp.  (PCSX-Redux's Homebrew formula builds gcc 16 -- fine for their purposes,
+# wrong for this one.)
+#
+# Only `make all-gcc` is built.  That produces the compiler proper, including
+# cpp, and skips libgcc -- which would need target headers this bare-metal
+# configuration deliberately does not have.
+GCC_VERSION=12.3.0
+if [ -x "$BIN/bin/mipsel-none-elf-cpp" ]; then
+    echo "==> cpp already present: $("$BIN/bin/mipsel-none-elf-cpp" --version | head -1)"
+else
+    echo "==> building gcc $GCC_VERSION cpp for mipsel-none-elf (slow: ~20 min)"
+    work="$BIN/.build-gcc"
+    rm -rf "$work"; mkdir -p "$work"; cd "$work"
+    curl -fsSL -O "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.xz"
+    tar xf "gcc-$GCC_VERSION.tar.xz"
+    # gmp/mpfr/mpc, in-tree, so the build does not depend on what Homebrew
+    # happens to have installed.
+    (cd "gcc-$GCC_VERSION" && ./contrib/download_prerequisites)
+    mkdir build && cd build
+    PATH="$BIN/bin:$PATH" "../gcc-$GCC_VERSION/configure" \
+        --target=mipsel-none-elf \
+        --prefix="$BIN" \
+        --without-headers --without-isl \
+        --with-gnu-as --with-gnu-ld \
+        --enable-languages=c \
+        --disable-multilib --disable-nls --disable-werror \
+        --disable-threads --disable-shared --disable-libssp \
+        --disable-libgomp --disable-libatomic --disable-libquadmath
+    make -j"$JOBS" all-gcc MAKEINFO=true
+    make install-gcc MAKEINFO=true
+    cd "$BIN"
+    rm -rf "$work"
+    echo "==> cpp: $("$BIN/bin/mipsel-none-elf-cpp" --version | head -1)"
 fi
 
 echo
