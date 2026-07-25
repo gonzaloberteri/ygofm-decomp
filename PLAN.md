@@ -1348,3 +1348,31 @@ or unusable.
 Also of note: the real BIOS is now used (`SCPH-1001`, copied from DuckStation).
 Redux was falling back to OpenBIOS, a reimplementation — a trace taken under it
 would not have been evidence about the real boot path.
+
+#### Correction: breakpoints work; my diagnosis was wrong twice
+
+The previous entry concluded "the x86-64 dynarec does not check execution
+breakpoints" and "the interpreter hangs". **Both were wrong**, and both were
+premature.
+
+The proof: a two-breakpoint probe on the entry point fired —
+`[bptest] FIRED at 800129D8` — under `-interpreter -debugger`, in KSEG0 form,
+once given enough frames.
+
+What was actually happening:
+
+* **`-fastboot` had been dropped** when `-bios` was added, so the BIOS intro was
+  playing. Under the slow interpreter the 90–400 frames allowed never reached the
+  game EXE at all; the log ended at `boot file : cdrom:\SLUS_014.11;1`, exactly
+  the handoff point.
+* The "interpreter hang" at BIOS was the same thing: it was in the BIOS intro,
+  progressing slowly, not hung.
+* The dynarec claim was never actually tested against a breakpoint known to be
+  reachable — it was inferred from a run that had the same two defects.
+
+This is the fourth instance in this project of the same error: **concluding a
+mechanism is broken without first establishing that the code under test ran.**
+The others were the `expand_div` "verification" that counted cc1's own guard, the
+`; echo "PUSHED"` after a broken `&&` chain, and a permuter "plateau" that was an
+instant crash. The common fix is to check the premise — did this execute at all —
+before believing a negative result.

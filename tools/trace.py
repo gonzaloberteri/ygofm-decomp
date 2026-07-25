@@ -106,7 +106,7 @@ def main():
     # -debugger and -interpreter: the x86-64 dynarec does not check breakpoints,
     # so 1206 armed breakpoints produced zero hits while the game demonstrably
     # ran. The interpreter is slower but is the only mode that observes them.
-    cmd = [REDUX, "-no-ui", "-stdout", "-run", "-debugger", "-interpreter",
+    cmd = [REDUX, "-no-ui", "-stdout", "-run", "-fastboot", "-debugger", "-interpreter",
            "-bios", BIOS,
            "-iso", IMAGE,
            "-dofile", os.path.join("tools", "trace.lua"),
