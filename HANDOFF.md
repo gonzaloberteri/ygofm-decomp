@@ -317,13 +317,17 @@ same ones independently, which was wasted effort.
 
 ## Hard rules
 
-- **Verify before believing a negative result.** Four times in this project a
+- **Verify before believing a negative result.** Five times in this project a
   mechanism was declared broken when the real cause was that the code under test
   never ran: a "verification" that counted the compiler's own guard rather than
   the feature's output; a `; echo "PUSHED"` after a broken `&&` chain; a permuter
-  "plateau" that was an instant crash; and a breakpoint "failure" caused by a
-  missing `-fastboot` so the game never started. **Before concluding something
-  does not work, prove it executed.** Run the control.
+  "plateau" that was an instant crash; a breakpoint "failure" caused by a
+  missing `-fastboot` so the game never started; and a firewall "finding" where
+  `Get-NetFirewallRule` returns an empty set rather than an error when run
+  unelevated, so *every* rule query came back empty and "no rule allows TCP/22"
+  was reported as measured fact. **Before concluding something does not work,
+  prove it executed.** Run the control — for a query, that means confirming the
+  query can return anything at all before trusting that it returned nothing.
 - Run `PY tools/verify_src.py` before every commit. Never `git add -A` while
   something else is writing to `src/`.
 - Never commit a file that does not print `MATCH`. Quarantine, do not delete.
@@ -340,24 +344,30 @@ same ones independently, which was wasted effort.
 
 ## Needs a human, do not try to work around
 
-**Inbound SSH to `.180`.** The Mac cannot reach `.180`, so it can only receive
-pushes, never pull. Two elevated commands fix it and neither can be run from an
-unelevated agent session (UAC cannot be driven non-interactively):
+Nothing right now.
 
-```powershell
-New-NetFirewallRule -DisplayName "OpenSSH inbound (LAN)" -Direction Inbound `
-  -Protocol TCP -LocalPort 22 -Action Allow -Profile Any -RemoteAddress 192.168.0.0/24
-Add-Content C:\ProgramData\ssh\administrators_authorized_keys "<the Mac's public key>"
-```
+Inbound SSH to `.180` **works in both directions** — verified end to end by
+having the Mac `scp` `asm/code_002800.s` off `.180` and comparing SHA-1
+(`fb45b794…`, matches). The key lives in
+`C:\ProgramData\ssh\administrators_authorized_keys`, not
+`C:\Users\PC\.ssh\authorized_keys`: `DESKTOP-9USQDG9\PC` is in Administrators,
+so `sshd_config`'s `Match Group administrators` block redirects the lookup, and
+appending to the `.ssh` one is a silent no-op for that account. That part is
+real and worth remembering when adding a fourth machine.
 
-Both are needed. `sshd` is already Running/Automatic and listening on 0.0.0.0:22,
-but **no firewall rule references TCP/22 in any direction** and the `Ethernet`
-profile is classified Public, so the SYN is dropped. And `DESKTOP-9USQDG9\PC` is
-in Administrators, so `sshd_config`'s `Match Group administrators` block makes
-sshd read `C:\ProgramData\ssh\administrators_authorized_keys` — appending to
-`C:\Users\PC\.ssh\authorized_keys` is a silent no-op for that account.
+**Retracted, and the way it was got wrong is the point.** This section
+previously claimed, as a measured fact, that "no firewall rule references
+TCP/22 in any direction". It was not measured. `Get-NetFirewallRule` and
+`Get-NetFirewallPortFilter` return an **empty set, not an error**, when run
+unelevated in this configuration — `Get-NetFirewallRule | Measure-Object`
+reports **0 rules total** on a machine that has hundreds. Every "no rule
+found" result was the tool being blind, and it was reported as evidence.
 
-Until then: push from `.180`, do not pull from the Mac.
+The control that would have caught it takes one line: *count all rules first.*
+A query that finds nothing is only evidence if the same query can find
+something. This is the fifth time in this project a negative result turned out
+to be a mechanism that never ran — see the hard rule below, which already said
+so.
 
 If you find something that genuinely needs a human, put it here rather than
 working around it, and say what you tried.
