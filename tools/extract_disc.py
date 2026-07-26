@@ -74,6 +74,13 @@ def walk(disc, lba, length, path=""):
 
 def main():
     bin_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BIN
+    if not os.path.exists(bin_path):
+        sys.exit("no disc image at %s\n"
+                 "The disc is yours and is not distributed, so there is no\n"
+                 "portable default.  Either put it next to the repo under that\n"
+                 "name, pass the path as an argument, or set YGOFM_DISC --\n"
+                 "which is what tools/all.py needs, since it passes no path."
+                 % bin_path)
     disc = Disc(bin_path)
 
     pvd = disc.sector(16)

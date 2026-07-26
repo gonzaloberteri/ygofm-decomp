@@ -144,6 +144,18 @@ py -3 tools/all.py --no-boot                        # skip the emulator
 py -3 tools/extract_disc.py "path\to\game.bin"      # if the disc is elsewhere
 ```
 
+**Where the disc is.** `extract_disc.py` looks for
+`Yu-Gi-Oh! Forbidden Memories (USA).bin` next to the repository, because the
+disc is yours and there is nothing portable to default to. Anywhere else, pass
+the path — or set `YGOFM_DISC`, which is what `all.py` needs, since it invokes
+`extract_disc.py` with no argument:
+
+```bash
+set YGOFM_DISC=C:\path\to\Yu-Gi-Oh! Forbidden Memories (USA).bin   # cmd
+$env:YGOFM_DISC = 'C:\path\to\...'                                 # PowerShell
+export YGOFM_DISC='/path/to/...'                                   # sh
+```
+
 `all.py` runs the whole pipeline: extract the disc, classify regions, generate
 the splat config, split, compile, link, verify, rebuild the image, verify again,
 render the progress map. It exits non-zero the moment the output stops being
