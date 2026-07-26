@@ -109,9 +109,24 @@ else
     rm -rf "$work"; mkdir -p "$work"; cd "$work"
     curl -fsSL -O "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.xz"
     tar xf "gcc-$GCC_VERSION.tar.xz"
-    # gmp/mpfr/mpc, in-tree, so the build does not depend on what Homebrew
-    # happens to have installed.
-    (cd "gcc-$GCC_VERSION" && ./contrib/download_prerequisites)
+
+    # gmp/mpfr/mpc.  `contrib/download_prerequisites` is the documented way and
+    # is not used here: it fetches from gcc.gnu.org, which is frequently
+    # unreachable (it timed out for 75 s when this was written) and has no
+    # mirror fallback.  A package manager is both faster and more reliable, so
+    # prefer one and only fall back to the script.
+    gmp_args=()
+    if command -v brew >/dev/null 2>&1; then
+        for lib in gmp mpfr libmpc; do
+            brew list --formula "$lib" >/dev/null 2>&1 || brew install "$lib"
+        done
+        gmp_args=(--with-gmp="$(brew --prefix gmp)"
+                  --with-mpfr="$(brew --prefix mpfr)"
+                  --with-mpc="$(brew --prefix libmpc)")
+    else
+        (cd "gcc-$GCC_VERSION" && ./contrib/download_prerequisites)
+    fi
+
     mkdir build && cd build
     PATH="$BIN/bin:$PATH" "../gcc-$GCC_VERSION/configure" \
         --target=mipsel-none-elf \
@@ -121,7 +136,8 @@ else
         --enable-languages=c \
         --disable-multilib --disable-nls --disable-werror \
         --disable-threads --disable-shared --disable-libssp \
-        --disable-libgomp --disable-libatomic --disable-libquadmath
+        --disable-libgomp --disable-libatomic --disable-libquadmath \
+        "${gmp_args[@]}"
     make -j"$JOBS" all-gcc MAKEINFO=true
     make install-gcc MAKEINFO=true
     cd "$BIN"
