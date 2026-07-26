@@ -2269,3 +2269,131 @@ func_8004A43C   13/55   registers, at -Os
 Nine of the ten are the same failure: **right length, right structure, wrong
 registers.** That is now unambiguously the dominant residual class, and it is
 not reachable by flags — it is a permuter and source-shape problem.
+
+### 2026-07-26 — three machines, and wibo is proven equivalent
+
+**The fleet is real now.** All three machines reproduce **all 340 source files
+byte-identically**, which is the only claim worth making about a build host:
+
+| | cores | how it runs CC1PSX | `verify_src.py` |
+|---|---|---|---|
+| `.180` DESKTOP-9USQDG9 | 16 | WOW64, native PE | 340 ok, 0 failing |
+| `.209` DESKTOP-G51OOOE | 4 | WOW64, native PE | 340 ok, 0 failing |
+| `.201` MacBook Air M4 | 10 | **wibo under Rosetta 2** | 340 ok, 0 failing |
+
+**The open question about wibo is answered: it emits the same bytes.** Not one
+function, not a spot check — the whole tree, including every file whose flags
+exercise `cc1_G`, `as_G`, `expand_div` and the `-fno-*` passes. `CC1PSX.EXE` is
+SHA256 `0755e509…56e65` on all three. The Mac was given only the SDK,
+`disc/SLUS_014.11` and `asm/code_002800.s`, over the LAN, all three verified by
+hash on arrival; nothing game-derived went near git or a cloud service.
+
+Two setup facts worth recording because both cost time:
+
+* **`.209` needed the whole gcc tree, not just `tools/bin/bin`.**
+  `mipsel-none-elf-cpp.exe` is a driver; it execs `cc1` out of
+  `tools/bin/libexec/gcc/mipsel-none-elf/12.3.0/`. Copying only `bin/` gives
+  `cannot execute 'cc1': CreateProcess: No such file or directory` on every
+  file, which reads like a missing compiler rather than a missing sibling.
+  `libexec` + `lib` + `mipsel-none-elf` is another 115 MB.
+* **winget on `.209` is broken** (`0x8a15000f`, and `source reset` does not fix
+  it). The official python.org installer with
+  `/quiet InstallAllUsers=0 PrependPath=1` works and needs no elevation.
+
+#### A loop-invariant constant wants a named local
+
+`func_8004AAFC` (122 instructions, the SPU key reconciler) went from "size 492,
+original 488" to **exactly 122 instructions** on one edit: giving the constant
+2 in the key-status wait a name.
+
+```c
+    /* 123 instructions: GCC materialises 2 inside the loop */
+    } while (key != 2 && key != 0);
+
+    /* 122: `done` is hoisted to $s6 before the loop, which is what the
+       original does */
+    done = 2;
+    ...
+    } while (key != done && key != 0);
+```
+
+This looks like it contradicts the entry above, which found that binding a
+constant to a local changes nothing because GCC propagates it straight back.
+It does not — the two cases differ in where the constant is used. There, the
+constant was an *argument* at a call site and GCC re-materialised it into the
+argument register regardless. Here it is a comparison operand inside a loop,
+so naming it makes it a loop invariant with a live range spanning the loop, and
+loop-invariant motion puts it in a callee-saved register. **Rule of thumb: name
+a constant when it is used inside a loop and the original holds it in `$s*`;
+do not bother when it feeds a call.**
+
+The same function also confirmed the reload recipe scales: `D_8009B458` named
+at each use produced the reload at all four call sites, and
+`&D_8009B458->voices[i]` strength-reduced into exactly the original's `$s5`
+offset induction variable starting at 0x180 and stepping 0x28.
+
+#### func_800357E8 shows both division rules at once
+
+The digit splitter divides by two things: `D_80090E0C[n]`, a table entry, and
+the literal 10. The original has a **real `div` with ASPSX's two guards** for
+the first and the **0x66666667 magic multiply** for the second, in the same
+loop. That is PLAN's two division rules — "a real `div` on a constant proves
+the source named the divisor in a variable" and "division by a literal is
+strength-reduced at every `-O` level" — demonstrated from both directions by
+one function, which is a useful reference case for reading the next one.
+
+Its second loop also decodes cleanly: it blanks leading zeros by writing glyph
+0xA, and `func_80016D2C` multiplies each digit by 8 to get the source cell, so
+0xA is the cell straight after `'0'..'9'`. The two functions corroborate each
+other.
+
+#### Not compiler output: the 0x8006Axxx cluster
+
+`func_8006A0E8`, `func_8006A268`, `func_8006A694`, `func_8006A814`,
+`func_8006A99C`, `func_8006AAFC`, `func_8006AC88`, `func_8006ADE8` — roughly
+570 instructions that show up near the top of any "large leaf function" list —
+are **hand-written GTE assembly, not C**. They use `rtpt`, `avsz4`, `cfc2`,
+`mfc2`, keep no stack frame at all, and save `$s0`–`$s2` into the *caller's*
+struct (`sw $s0, 0x20($a0)`). No compiler emits that. They should be excluded
+from candidate selection rather than attempted; the same is true of the libgs
+and libgte names that share the region.
+
+#### func_80012DB4: the $at signature, and why it is not reproducible honestly
+
+Parked at 37 of 42. The residual is entirely how `D_8009AFA3` and `D_8009AFA4`
+are addressed: the original reaches both through the assembler's macro form,
+
+```
+    lui  $at, %hi(D_8009AFA3)
+    sb   $a1, %lo(D_8009AFA3)($at)
+```
+
+and `$at` proves gas expanded a macro, because cc1 never allocates `$at`. So
+cc1 thought the symbol small (emitted `sb $a1,D_8009AFA3`) and gas did not
+gp-address it — that is **`cc1_G` > `as_G` with the object's declared size in
+between**. But `D_8009B0C8` and `D_8009B0D8` are `s32` and *are* gp-addressed
+in the same function, forcing `as_G >= 4`, so the declared size would have to
+be 5..8 — and these two are adjacent single bytes at gp+0x9B and gp+0x9C.
+Declaring either as a 5..8 byte object is a false claim about the object that
+happens to move the bytes. Not made. This is the first case in the project
+where the addressing knob and the truth are in direct conflict.
+
+#### Parked, updated
+
+```
+func_8004AAFC  31/122  right length and structure; s1/s2/s3 permuted
+func_8004C420  79/80   one short: the original keeps *two* copies of the
+                       command byte, in $a1 and $a0, and re-materialising that
+                       redundant copy is not source-controllable
+func_80040814  12/47   right length; three sites, one of them `andi/xori/bnez`
+                       against our `li/andi/bne` for `(x & 0xC0) == 0xC0`
+func_800357E8  47/46   one over: the original works on $a0 in place where we
+                       copy the parameter first
+func_80012DB4  37/42   see above
+```
+
+Everything above is farmed to the permuter fleet. The permuter's value on this
+class is now measured rather than assumed: it moved `func_8004318C` from 7 to 4
+with a legitimate edit, and has not moved `func_8004A7C0` (base score 20) or
+`func_800357E8` (base ~1600) at all. It is worth running on a function whose
+length and structure are already exact, and not otherwise.

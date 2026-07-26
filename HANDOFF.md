@@ -37,33 +37,45 @@ to the same bytes or it is rejected. There is no "looks correct".
 **A non-matching file in `src/` is not harmless work-in-progress — it silently
 replaces correct assembly with wrong code.** Never commit one.
 
-## Machines
+## Machines — all three are set up and all three agree
 
-- **This one — `.180`, DESKTOP-9USQDG9, 16 cores.** Everything is set up here.
-  Do the interactive work here: matching, emulator runs, Ghidra.
-- **`.209`, DESKTOP-G51OOOE — measured: i5-4460, 4 logical cores, 16 GB,
-  433 GB free, Windows 10 Pro.** Passwordless SSH both directions as user `pc`,
-  default shell PowerShell: `ssh -o BatchMode=yes pc@192.168.0.209`.
+Every machine below reproduces **all 340 source files byte-identically**
+(`tools/verify_src.py`: 340 ok, 0 failing). `CC1PSX.EXE` is SHA256
+`0755e509f148b6018e97e89e798493af37c290a44fc97ecd1ec661182ed56e65` on all
+three. Do not re-derive this; it is measured.
 
-  **Be realistic about it.** Four Haswell cores against this box's sixteen, so
-  it is worth roughly a fifth of the local machine and only for work that runs
-  unattended for a long time. It is Windows, which is the one thing that makes
-  it usable at all — the Psy-Q tools are 32-bit PE.
+| | address | cores | CC1PSX runs via |
+|---|---|---|---|
+| `.180` DESKTOP-9USQDG9 | 192.168.0.180 | 16 | WOW64 |
+| `.209` DESKTOP-G51OOOE | 192.168.0.209 | 4 (Haswell) | WOW64 |
+| `.201` MacBook Air M4 | 192.168.0.201 | 10 | **wibo under Rosetta 2** |
 
-  **It is not set up.** Measured: `git` present, **Python missing**, no repo.
-  `tools/bin/` and `.venv/` are gitignored, so a clone gets no toolchain at all
-  — Python, the venv, binutils, mkpsxiso and Psy-Q all have to be installed
-  there first. That is a real cost; do it only when there is a queue of batch
-  work big enough to repay it, and script it rather than doing it by hand.
+- **`.180` is where the interactive work goes**: matching, emulator runs,
+  Ghidra. It is the only one with PCSX-Redux, the save states and the disc.
+- **`.209`**: `ssh -o BatchMode=yes pc@192.168.0.209`, PowerShell, and the
+  session is elevated. Python 3.13.7 from the python.org installer — **winget
+  is broken there** (`0x8a15000f`, and `source reset` does not fix it).
+- **`.201`**: `ssh gonza@192.168.0.201`, repo at
+  `/Users/gonza/dev/ygofm-decomp`. It cannot rebuild the disc image (no
+  mkpsxiso, no disc) and cannot boot anything (no Redux), but it compiles and
+  matches, which is what batch work needs.
 
-  When it is set up, give it *batch* work and never the interactive loop:
-  `tools/flagsweep.py` and `tools/permute.py` over functions parked in
-  `build/rejected/`. Both are pure CPU and need no emulator, no disc image and
-  no save states — which is why they port cleanly. Use `--jobs 3`, leaving a
-  core: `permute.py --jobs 14` reached 88 processes and 1.2 GB on a 16-core box,
-  so 4 cores will thrash long before that. Copy results back and re-verify with
-  `tools/match.py` here; **never trust a match that was not re-checked on
-  `.180`.**
+**Give the two remote machines batch work only** — `tools/flagsweep.py` and
+`tools/permute.py` over `build/rejected/`. Use `--jobs 3` on `.209` and
+`--jobs 8` on the Mac; `permute.py --jobs 14` reached 88 processes and 1.2 GB
+on the 16-core box. Copy results back and re-verify with `tools/match.py` on
+`.180`; **never trust a match that was not re-checked there.**
+
+Three gitignored things have to be copied by hand to a new machine, over the
+LAN and never through git or a cloud service: `tools/bin/psyq/p46` (the SDK,
+proprietary), `disc/SLUS_014.11` and `asm/code_002800.s` (both generated, both
+game-derived). About 22 MB. Plus the binutils tree — and note that
+`tools/bin/bin` **alone is not enough**: `mipsel-none-elf-cpp` is a driver and
+execs `cc1` out of `tools/bin/libexec/gcc/mipsel-none-elf/12.3.0/`, so
+`libexec`, `lib` and `mipsel-none-elf` have to come too.
+
+`tools/toolchain.py` reports what a machine can and cannot do; run it first on
+any new host.
 
 ## Environment
 
@@ -328,8 +340,24 @@ same ones independently, which was wasted effort.
 
 ## Needs a human, do not try to work around
 
-Nothing right now. The one item that was here — a PCSX-Redux save state at a duel
-— has been done; see "Resolved since the last handoff".
+**Inbound SSH to `.180`.** The Mac cannot reach `.180`, so it can only receive
+pushes, never pull. Two elevated commands fix it and neither can be run from an
+unelevated agent session (UAC cannot be driven non-interactively):
+
+```powershell
+New-NetFirewallRule -DisplayName "OpenSSH inbound (LAN)" -Direction Inbound `
+  -Protocol TCP -LocalPort 22 -Action Allow -Profile Any -RemoteAddress 192.168.0.0/24
+Add-Content C:\ProgramData\ssh\administrators_authorized_keys "<the Mac's public key>"
+```
+
+Both are needed. `sshd` is already Running/Automatic and listening on 0.0.0.0:22,
+but **no firewall rule references TCP/22 in any direction** and the `Ethernet`
+profile is classified Public, so the SYN is dropped. And `DESKTOP-9USQDG9\PC` is
+in Administrators, so `sshd_config`'s `Match Group administrators` block makes
+sshd read `C:\ProgramData\ssh\administrators_authorized_keys` — appending to
+`C:\Users\PC\.ssh\authorized_keys` is a silent no-op for that account.
+
+Until then: push from `.180`, do not pull from the Mac.
 
 If you find something that genuinely needs a human, put it here rather than
 working around it, and say what you tried.
