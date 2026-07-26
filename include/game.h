@@ -329,7 +329,10 @@ typedef struct SoundChannel {
     /* 0x01 */ char pad_01[0x03];
     /* 0x04 */ u8   unk_04;         /* func_8004B374 clears it when a note on
                                      * this channel is released */
-    /* 0x05 */ char pad_05[0x02];
+    /* 0x05 */ char pad_05[0x01];
+    /* 0x06 */ u8   unk_06;         /* low nibble is a voice-use count that
+                                     * func_8004AAFC decrements when a voice on
+                                     * this channel goes idle */
     /* 0x07 */ u8   unk_07;         /* func_8004A43C compares it against the
                                      * request's unk_1A and feeds it to
                                      * func_8004A3BC -- a note or key number */
