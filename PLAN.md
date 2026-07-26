@@ -2397,3 +2397,42 @@ class is now measured rather than assumed: it moved `func_8004318C` from 7 to 4
 with a legitimate edit, and has not moved `func_8004A7C0` (base score 20) or
 `func_800357E8` (base ~1600) at all. It is worth running on a function whose
 length and structure are already exact, and not otherwise.
+
+#### A lead that cannot be tested with what is on disk
+
+Nine of the parked near-misses now share a shape: right length, right
+structure, and a residual that is either a register permutation or an
+*instruction-selection* choice where the original's compiler picked the plainer
+option. Collected:
+
+| original | ours | function |
+|---|---|---|
+| `sllv $a0,$v0,$v1` with `$v1` holding 0x10 | `sll $a0,$v0,0x10` | `func_8004A43C` |
+| `addu $a1,$a0,$zero` for a repeated argument | `li a1,96` | `func_80041340` |
+| `andi 0xC0; xori 0xC0; bnez` | `li v1,192; andi; bne` | `func_80040814` |
+| `andi 0x1000; sltiu $v1,$v0,1` | `srl 12; xori 1; andi 1` | `func_80017034` |
+| `addu $a0,$v0,$t0` for a giv init | `addiu $a0,$v0,31` | `func_8003CCD8` |
+
+Every one of these is cost-neutral, so `cse.c`'s "replace only if cheaper" test
+does not discriminate them, and no `-O` level or `-f` flag moved any of them.
+The common factor is that **the original's compiler consistently chose the
+form that reuses a value already in a register, or the generic comparison,
+where ours chooses the specialised one.** That is what a *different cc1 build*
+looks like.
+
+The obvious candidate is Psy-Q **4.7**'s compiler. It cannot be tried:
+`tools/bin/psyq/p47/` holds only `psyq-4_7-converted/lib`, the ELF-converted
+libraries used by `psyq_sigs.py`. There is **no `BIN/` directory and no second
+`CC1PSX.EXE` anywhere on disk** — 4.6's is the only compiler the project has.
+
+So this is a lead, not a finding, and it needs a human to source Psy-Q 4.7's
+`BIN/`. Two things make it worth the trouble rather than a guess:
+
+* the project already knows the game links **4.6's `libgpu`/`font` and 4.7's
+  `libds`**, so both releases were on the original build machine;
+* 322 functions match with 4.6's compiler, so if a second compiler is involved
+  it is per-translation-unit, exactly like `opt`, `as_G` and `cc1_G` already
+  are — which would make it a fourth knob rather than a contradiction.
+
+Until it can be tested, treat the table above as unexplained and do not spend
+more flag sweeps on it. The sweeps have been done.
