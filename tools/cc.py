@@ -16,11 +16,11 @@ import re
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PSYQ = os.path.join(REPO, "tools", "bin", "psyq", "p46", "Psy-Q - 46")
-CC1 = os.path.join(PSYQ, "BIN", "CC1PSX.EXE")
-GNU_AS = os.path.join(REPO, "tools", "bin", "bin", "mipsel-none-elf-as.exe")
-CPP = os.path.join(REPO, "tools", "bin", "bin", "mipsel-none-elf-cpp.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+
+REPO = toolchain.REPO
+PSYQ = toolchain.PSYQ
 MASPSX = os.path.join(REPO, "tools", "maspsx", "maspsx.py")
 
 ASPSX_VERSION = "2.86"
@@ -79,7 +79,7 @@ def flags_for(src):
 # what the original build used.  -G8 puts small objects in the small-data area,
 # which is why so much of the game addresses through $gp.
 CC1_BASE = ["-quiet", "-fgnu-linker", "-mgas"]
-INCLUDES = [os.path.join(PSYQ, "INCLUDE"), os.path.join(REPO, "include"),
+INCLUDES = [toolchain.PSYQ_INCLUDE, os.path.join(REPO, "include"),
             os.path.join(REPO, "src")]
 
 
@@ -97,7 +97,8 @@ def compile_c(src, obj, extra_flags=(), as_g=None, expand_div=None, cc1_g=None):
     asm = obj + ".s"
     os.makedirs(os.path.dirname(obj) or ".", exist_ok=True)
 
-    cpp_cmd = [CPP, "-undef", "-nostdinc", "-D__GNUC__=2", "-D__OPTIMIZE__",
+    cpp_cmd = [toolchain.binutil("cpp"),
+               "-undef", "-nostdinc", "-D__GNUC__=2", "-D__OPTIMIZE__",
                "-Dmips", "-D__mips__", "-D__PSX__", "-DPSX"]
     for inc in INCLUDES:
         cpp_cmd += ["-I", inc]
@@ -126,10 +127,15 @@ def compile_c(src, obj, extra_flags=(), as_g=None, expand_div=None, cc1_g=None):
     # cannot stack -- and suppressing it is actively harmful, because without
     # the guard block sitting between them the scheduler hoists the epilogue
     # loads into the gap between `div` and `mfhi`, which the original does not.
-    run([CC1] + cc1_flags + list(extra_flags) + [tmp, "-o", asm])
+    # psyq_cc1() is an argv *prefix*, not a path: off Windows CC1PSX.EXE is a
+    # 32-bit PE and the prefix carries a loader (wibo) in front of it.  The
+    # absolute POSIX paths in `tmp`/`asm` need no translation -- the loader maps
+    # the host filesystem at Z:\ and the current drive is always Z: here.
+    run(toolchain.psyq_cc1() + cc1_flags + list(extra_flags) + [tmp, "-o", asm])
 
     maspsx_flags = ["--aspsx-version", ASPSX_VERSION, "--run-assembler",
-                    "--gnu-as-path", GNU_AS, "--dont-force-G0"]
+                    "--gnu-as-path", toolchain.binutil("as"),
+                    "--dont-force-G0"]
     # ASPSX guards division with checks for /0 *and* INT_MIN/-1, and puts mfhi
     # after both.  GNU as emits only the /0 check, so any function containing a
     # `%` or `/` is a few instructions short unless maspsx expands it itself.

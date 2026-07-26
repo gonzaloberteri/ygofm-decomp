@@ -18,9 +18,11 @@ import os
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DUMPSXISO = os.path.join(REPO, "tools", "bin", "mkpsxiso-2.30-win64",
-                         "dumpsxiso.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+
+REPO = toolchain.REPO
+DUMPSXISO = toolchain.dumpsxiso()
 XML = os.path.join(REPO, "config", "disc.xml")
 ISO_DIR = os.path.join(REPO, "iso")
 

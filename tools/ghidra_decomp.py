@@ -16,8 +16,21 @@ import os
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GHIDRA = os.path.join(REPO, "tools", "bin", "ghidra", "ghidra_12.1.2_PUBLIC")
-JDK = os.path.join(REPO, "tools", "bin", "jdk", "jdk-21.0.11+10")
+import glob
+
+def _versioned(parent, prefix):
+    """The one directory under `parent` starting with `prefix`.
+
+    Ghidra and Temurin both unpack to a name carrying the version and,
+    for the JDK, the platform -- `jdk-21.0.11+10` on one host is not the
+    name on another.  Matching a prefix keeps this working across hosts
+    without pinning a build number that was only ever right locally.
+    """
+    hits = sorted(glob.glob(os.path.join(parent, prefix + "*")))
+    return hits[0] if hits else os.path.join(parent, prefix)
+
+GHIDRA = _versioned(os.path.join(REPO, "tools", "bin", "ghidra"), "ghidra_")
+JDK = _versioned(os.path.join(REPO, "tools", "bin", "jdk"), "jdk-")
 WORK = os.path.join(REPO, "build", "ghidra")
 PAYLOAD = os.path.join(WORK, "SLUS_014.11.payload")
 

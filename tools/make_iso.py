@@ -11,8 +11,11 @@ import shutil
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MKPSXISO = os.path.join(REPO, "tools", "bin", "mkpsxiso-2.30-win64", "mkpsxiso.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+
+REPO = toolchain.REPO
+MKPSXISO = toolchain.mkpsxiso()
 XML = os.path.join(REPO, "config", "disc.xml")
 OUT = os.path.join(REPO, "build", "ygofm")
 

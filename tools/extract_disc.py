@@ -11,8 +11,10 @@ import struct
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_BIN = (r"C:\Users\PC\Downloads\Yu-Gi-Oh! Forbidden Memories (USA)"
-               r"\Yu-Gi-Oh! Forbidden Memories (USA).bin")
+# Per-machine: the disc is yours and is not distributed, so the only portable
+# default is "next to the repo", with an override for anywhere else.
+DEFAULT_BIN = os.environ.get("YGOFM_DISC") or os.path.join(
+    REPO, "Yu-Gi-Oh! Forbidden Memories (USA).bin")
 
 RAW = 2352          # bytes per raw sector
 USER_OFF = 24       # Mode 2 Form 1: 12 sync + 4 header + 8 subheader
@@ -72,6 +74,13 @@ def walk(disc, lba, length, path=""):
 
 def main():
     bin_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BIN
+    if not os.path.exists(bin_path):
+        sys.exit("no disc image at %s\n"
+                 "The disc is yours and is not distributed, so there is no\n"
+                 "portable default.  Either put it next to the repo under that\n"
+                 "name, pass the path as an argument, or set YGOFM_DISC --\n"
+                 "which is what tools/all.py needs, since it passes no path."
+                 % bin_path)
     disc = Disc(bin_path)
 
     pvd = disc.sector(16)

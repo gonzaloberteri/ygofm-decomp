@@ -91,6 +91,8 @@ def sdk_named():
 def load_font(size):
     for path in (r"C:\Windows\Fonts\segoeui.ttf",
                  r"C:\Windows\Fonts\arial.ttf",
+                 "/System/Library/Fonts/Supplemental/Arial.ttf",
+                 "/System/Library/Fonts/Helvetica.ttc",
                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
         if os.path.exists(path):
             return ImageFont.truetype(path, size)

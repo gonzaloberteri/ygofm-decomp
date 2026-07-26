@@ -31,10 +31,12 @@ import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REDUX = os.path.join(REPO, "tools", "bin", "redux", "pcsx-redux.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+REDUX = toolchain.redux()
 # The real BIOS.  Redux otherwise falls back to OpenBIOS, which is a
 # reimplementation and not something to trust for judging whether the game boots.
-BIOS = os.path.join(REPO, "tools", "bin", "redux", "SCPH1001.BIN")
+BIOS = toolchain.bios()
 # Shared with tools/trace.py and tools/sample.py -- one set of states, captured
 # by hand in the Redux GUI (File -> Save state slots).
 STATE_DIR = os.path.join(REPO, "tools", "states")

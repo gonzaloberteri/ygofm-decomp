@@ -33,8 +33,10 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 import funcs as funcs_mod                                        # noqa: E402
 import trace as trace_mod                                        # noqa: E402
 
-REDUX = os.path.join(REPO, "tools", "bin", "redux", "pcsx-redux.exe")
-BIOS = os.path.join(REPO, "tools", "bin", "redux", "SCPH1001.BIN")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+REDUX = toolchain.redux()
+BIOS = toolchain.bios()
 IMAGE = os.path.join(REPO, "build", "ygofm.bin")
 WORK = os.path.join(REPO, "build", "trace")
 SAMPLES_TXT = os.path.join(WORK, "samples.txt")

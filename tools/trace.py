@@ -23,12 +23,14 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 
 import funcs as funcs_mod                                        # noqa: E402
 
-REDUX = os.path.join(REPO, "tools", "bin", "redux", "pcsx-redux.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import toolchain
+REDUX = toolchain.redux()
 # The real BIOS, copied from DuckStation. Redux otherwise falls back to
 # OpenBIOS, which is a reimplementation and not something to trust for running a
 # commercial game -- a trace taken under it would not be evidence about the real
 # boot path.
-BIOS = os.path.join(REPO, "tools", "bin", "redux", "SCPH1001.BIN")
+BIOS = toolchain.bios()
 IMAGE = os.path.join(REPO, "build", "ygofm.bin")
 WORK = os.path.join(REPO, "build", "trace")
 FUNCS_TXT = os.path.join(WORK, "funcs.txt")
