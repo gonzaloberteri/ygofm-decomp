@@ -347,7 +347,10 @@ typedef struct SoundVoice {
     /* 0x06 */ char pad_06[0x07];
     /* 0x0D */ u8   unk_0D;         /* must be non-zero for the voice to be
                                      * pushed to the SPU */
-    /* 0x0E */ char pad_0E[0x06];
+    /* 0x0E */ char pad_0E[0x01];
+    /* 0x0F */ u8   unk_0F;         /* cleared by func_8004A7C0 once the SPU
+                                     * has acknowledged the key-off */
+    /* 0x10 */ char pad_10[0x04];
     /* 0x14 */ u16  unk_14;         /* copied into SpuVoiceAttr+0x18 (note) */
     /* 0x16 */ u16  unk_16;         /* copied into SpuVoiceAttr+0x1A (sample_note) */
     /* 0x18 */ char pad_18[0x06];
