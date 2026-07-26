@@ -1,6 +1,8 @@
 #include "types.h"
 #include "m2c_macros.h"
 
+M2C_UNK SpuGetAllKeysStatus(void *);                /* static */
+M2C_UNK SpuSetKey(M2C_UNK, M2C_UNK);                /* static */
 extern void *D_8009B45C;
 
 void func_80047EC4(void) {
@@ -9,7 +11,7 @@ void func_80047EC4(void) {
 
     var_s0 = 0;
 loop_1:
-    SpuSetKey(0, 0xF00000U);
+    SpuSetKey(0, 0xF00000);
     SpuGetAllKeysStatus(D_8009B45C + 0x15D8);
     temp_a0 = M2C_FIELD(D_8009B45C, u8 *, 0x15EF);
     var_s0 += 1;

@@ -381,9 +381,10 @@ def main():
     # run that purged them left every other generated file on the *default*
     # flags -- the .c file still there, still listed, and no longer matching.
     # That is how `--limit 6` turned 340 ok into 256 ok, 84 failing.
-    if args.all:
-        cfg["files"] = {k: v for k, v in cfg["files"].items()
-                        if not k.startswith("src/auto/")}
+    # Merge, never purge -- same reasoning as the file handling below: this run
+    # is not guaranteed to reproduce everything already in src/auto, and an
+    # entry dropped here leaves its .c file compiling on the default flags,
+    # which is how `--limit 6` turned 340 ok into 256 ok, 84 failing.
     cfg["files"].update(as_overrides)
     cfg["files"] = {k: cfg["files"][k] for k in sorted(cfg["files"])}
     json.dump(cfg, open(path, "w"), indent=2)
@@ -402,18 +403,36 @@ def main():
     #
     # So: a full run still swaps, because that is the only way a function that
     # has *stopped* matching gets removed.  A partial run merges.
+    # Never delete, not even on a full run.
+    #
+    # The obvious model -- "a full run is the authority on src/auto, so purge
+    # what it did not reproduce" -- is wrong, and measurably so: a full
+    # --all --max-insns 250 sweep failed to reproduce 14 functions that were
+    # already in src/auto and that still match.  All 14 are small (5..33
+    # instructions), all were candidates, and all pass tools/match.py on their
+    # committed source and flags.  So the sweep is not a superset of its own
+    # previous output, and a purge silently discards real matched work whose
+    # only symptom is the progress number falling -- the build stays
+    # byte-identical, because a removed function just links from assembly again.
+    #
+    # Removing a function that has genuinely *stopped* matching is a different
+    # job, and the project already has the right tool for it, with a gate:
+    # `tools/verify_src.py --quarantine`.  Use that.
     os.makedirs(OUTDIR, exist_ok=True)
-    if args.all:
-        for stale in os.listdir(OUTDIR):
-            if stale.endswith(".c") and not os.path.exists(
-                    os.path.join(staging, stale)):
-                os.remove(os.path.join(OUTDIR, stale))
+    kept = [f for f in os.listdir(OUTDIR)
+            if f.endswith(".c") and not os.path.exists(
+                os.path.join(staging, f))]
     for f in os.listdir(staging):
         shutil.copyfile(os.path.join(staging, f), os.path.join(OUTDIR, f))
     shutil.rmtree(staging)
-    print("written to src/auto/ (%d file(s), %s)"
-          % (len(matched), "full run: stale files removed" if args.all
-             else "partial run: merged, nothing removed"))
+    print("written to src/auto/ (%d file(s) from this run, %d pre-existing kept)"
+          % (len(matched), len(kept)))
+    if args.all and kept:
+        print("  NOTE: this run did not reproduce %d file(s) already in "
+              "src/auto." % len(kept))
+        print("  They are kept.  Run `tools/verify_src.py` to confirm they "
+              "still match, and")
+        print("  `tools/verify_src.py --quarantine` to remove any that do not.")
     return 0
 
 

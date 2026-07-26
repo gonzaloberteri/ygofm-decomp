@@ -1,6 +1,7 @@
 #include "types.h"
 #include "m2c_macros.h"
 
+M2C_UNK SpuQuit();                                  /* static */
 M2C_UNK func_80049434();                            /* static */
 M2C_UNK func_8004A6D8();                            /* static */
 

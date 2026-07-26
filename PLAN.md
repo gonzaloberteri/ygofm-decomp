@@ -2436,3 +2436,70 @@ So this is a lead, not a finding, and it needs a human to source Psy-Q 4.7's
 
 Until it can be tested, treat the table above as unexplained and do not spend
 more flag sweeps on it. The sweeps have been done.
+
+#### The automated pass was not out of flags after all — 13 more functions
+
+README says "unedited m2c output is exhausted" and attributes the
+`size-differs` bucket (~49% of failures) to structure recovery rather than a
+flag search. That was half right. `tools/autodecomp.py` swept
+`opt × as_G × expand_div` and **never varied `cc1_G`, nor tried
+`-fno-strength-reduce`** — and both change the instruction *count*, so both
+land their failures in exactly that bucket:
+
+* `cc1_G=0` makes cc1 emit its own `%hi/%lo`, so two uses of one symbol's
+  address share a `lui`; at `cc1_G=8` gas expands each macro separately and the
+  function comes out one instruction long per extra `lui`.
+* `-fno-strength-reduce` stops `check_dbra_loop` reversing a counted loop into a
+  countdown, and changes whether a giv is created at all.
+
+Widening the search from 8–16 combinations per function to 32–64 and re-running
+over 973 candidates at `--max-insns 250`:
+
+```
+match            180
+size-differs     442
+compile-failed   135
+differs          133
+m2c-failed        83
+```
+
+Net **+13 functions, 4,537 → 4,633 instructions matched** (335 of 1,206
+functions, 4.67%). Modest, but it was free, and it means the *remaining*
+`size-differs` 442 is now a better-founded number than the old one: the cheap
+flag knobs really are exhausted, whereas before they had not all been tried.
+
+#### tools/autodecomp.py deleted 175 matched functions, twice, silently
+
+Worth recording in full because the failure is invisible to the project's
+strongest gate.
+
+The pass ended with an unconditional `rmtree(src/auto); rename(staging)`, plus
+the same purge applied to `src/auto/` entries in `config/cflags.json`. That is
+correct for a full run and destructive for any other. A `--limit 6` smoke test
+replaced 340 files with 6 and deleted 175 matched functions.
+
+**`tools/build.py` stayed byte-identical throughout.** It has to: a deleted
+function simply links from its assembly again. The only symptom is the progress
+number falling, and that is not a gate. `verify_src.py` did not catch it either
+— the files were gone, so there was nothing left to fail.
+
+Fixing only the file half made it worse: the `.c` files were kept and their
+flag overrides were still purged, so 84 files compiled on the defaults and
+`verify_src` went to **256 ok, 84 failing**. That one the gate did catch,
+which is the argument for running it before every commit rather than trusting
+a green build.
+
+The final fix is stronger than making the purge conditional on `--all`, because
+**a full run is not a superset of its own previous output.** Measured: the
+widened `--all` sweep failed to reproduce 14 functions that were already in
+`src/auto`, all of them small (5..33 instructions), all candidates, and all
+still passing `tools/match.py` on their committed source and flags. So even an
+honest full run would have thrown away real work. `autodecomp.py` now **never
+deletes**; it reports what it did not reproduce and points at
+`verify_src.py --quarantine`, which is the tool that already removes files with
+a gate in front of it.
+
+The general lesson, and it is the same one as the firewall query earlier the
+same day: *a gate only protects what it can observe.* The hash gate proves the
+bytes we emit are right; it says nothing about work that has quietly stopped
+being emitted at all.

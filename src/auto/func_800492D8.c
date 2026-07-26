@@ -1,6 +1,7 @@
 #include "types.h"
 #include "m2c_macros.h"
 
+M2C_UNK SpuSetReverbModeType(M2C_UNK);              /* static */
 M2C_UNK func_80046294();                            /* static */
 M2C_UNK func_80049010();                            /* static */
 

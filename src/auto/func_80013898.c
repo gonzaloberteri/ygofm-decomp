@@ -16,6 +16,8 @@ extern s32 D_8009B12C;
 extern s32 D_8009B130;
 extern s32 D_8009B134;
 
+s32 DsInit();                                       /* static */
+
 void func_80013898(s32 arg0) {
     D_8009B118 = arg0;
     D_8009B110 = 0;
