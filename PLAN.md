@@ -2030,3 +2030,173 @@ Also recorded: `SoundWork+0x4C0` is confirmed `SpuVoiceAttr` — `mask = 0x10`
 `+0x4D4`, i.e. `attr.pitch` at attr+0x14, which is where libspu puts it. The
 `0x10` is materialised once and used both as the stored mask and as the `sllv`
 shift amount, which is why the shift is register-form rather than `sll ..,16`.
+
+### 2026-07-25 (later) — six matches, and the residual class is register allocation
+
+Six functions matched this session, 291 instructions:
+
+| function | insns | what it needed |
+|---|---|---|
+| `func_8004B734` | 72 | the reload recipe, plus a corrected reading of the guards |
+| `func_80043230` | 62 | nothing — first attempt |
+| `func_8001306C` | 58 | `-fno-strength-reduce`, and `i` initialised before the cursor |
+| `func_80039934` | 56 | `-Os`, and **two** locals for three pointers |
+| `func_80022EEC` | 43 | `-Os` |
+
+#### Retraction: the "delay-slot class" was a misread guard, not reorg.c
+
+The queue's item 6 said `func_8004B734` was 71 of 72 instructions with the
+residual being "a single `nop` the original has and we do not", and sent the
+next reader to `reorg.c`. That is wrong and is retracted.
+
+The fourth guard is
+
+```
+    lbu   $v0, 0x501($v1)
+    bnez  $v0, .L8004B844
+     addu $v0, $zero, $zero      <- delay slot materialises 0, not 1
+```
+
+so that guard returns **0**, where the previous three return 1. Written as
+`if (busy == 0) { ... }` around the body rather than a fourth early
+`return 1`, the function matches on the first attempt — no `nop` to explain,
+no delay-slot question. The `nop` we were missing was the one GCC could not
+fill *because our control flow was different*.
+
+The general lesson, which is cheap to apply and was not written down before:
+**the value materialised in a guard's delay slot tells you what that guard
+returns.** Read the slot before assuming the guards are symmetrical.
+
+The reload recipe itself (`cc1_G=8` plus naming `D_8009B458` at each use)
+worked exactly as the previous entry predicted: three `lui %hi / lw %lo` pairs
+in the right places, including both post-call ones, with no hoisting.
+
+#### -Os is worth trying on every near-miss, not just register near-misses
+
+The earlier entry established `-Os` as the third allocation mode. This session
+it was the deciding flag far more often than that framing suggests:
+
+* `func_80022EEC` and `func_80039934` matched **only** at `-Os`;
+* `func_8004A43C` went from "size 216, original 220" at `-O2` to the **exact
+  length with 13 registers differing** at `-Os`, which retracts this document's
+  claim that its residual is a delay-slot scheduling decision — it is
+  allocation, like the rest of the class;
+* `func_8004318C` went from 14 to 7 differing instructions.
+
+`-O2` and `-Os` also fix *disjoint halves* of `func_8004318C`: `-O2` gets the
+epilogue ordering right and the middle wrong, `-Os` the reverse. So the two
+modes are not ordered by quality and both must be tried.
+
+#### Two new source-shape idioms, both verified by flipping them
+
+* **Initialisation order decides which callee-saved register an induction
+  variable gets.** `func_8001306C` walks a callback table with a counter and a
+  cursor. Writing `p = table; for (i = 0; ...)` puts the counter in `$s0` and
+  the cursor in `$s1`; writing `i = 0; p = table; for (; ...)` swaps them,
+  which is what the original has. Nothing else changed.
+* **How many locals share a value decides its register.** `func_80039934`
+  positions three sprite pointers. One local for all three puts them in `$a3`;
+  three separate locals put the first in `$v0`; **two** — the first two sprites
+  sharing one local, the third with its own — puts all three in `$a0`, which is
+  the original. This is not a stylistic choice the compiler ignores.
+
+#### cc1_G=0 is what lets two uses of one symbol's address share a lui
+
+`func_8001352C` reads three fields of `D_800F2848` and passes its address.
+With `cc1_G=8`, cc1 emits the assembler's macro forms (`la $17,D_800F2848`,
+`lh $2,D_800F2848`) and gas expands **each with its own `lui`** — one
+instruction too many. With `cc1_G=0`, cc1 emits `%hi`/`%lo` itself, CSE shares
+the `%hi`, and the length is exact:
+
+```
+    lui   $v0, %hi(D_800F2848)
+    addiu $s2, $v0, %lo(D_800F2848)     <- address, for later
+    lh    $v0, %lo(D_800F2848)($v0)     <- first field, same lui
+```
+
+This is the same knob PLAN already documented from the other direction, but the
+symptom is different: not "different registers for `%hi` and the value" but
+**a duplicated `lui` and a function one instruction too long.** Reach for
+`cc1_G=0` whenever a function is exactly as long as the number of extra `lui`s
+it contains.
+
+#### Open: this build never substitutes a register for a re-materialisable value
+
+Three functions, three unrelated contexts, same shape — the original keeps a
+value in a register and reuses it, we re-materialise it:
+
+| function | original | ours |
+|---|---|---|
+| `func_8004A43C` | `sllv $a0,$v0,$v1` with `$v1 = 0x10`, the same register stored as the SPU attr mask | `sll $a0,$v0,0x10` |
+| `func_80041340` | `addiu $a0,$zero,0x60; addu $a1,$a0,$zero; addu $a2,$a0,$zero` | three `li`s |
+| `func_8003CCD8` | `addu $a0,$v0,$t0`, the giv's initial value formed from the biv's register | `addiu $a0,$v0,31` |
+
+All three are cost-neutral (one instruction either way), which rules out
+`cse.c`'s `COST(replacement) < COST(operand)` test as the discriminator — that
+test only fires when the replacement is *cheaper*. Binding the constant to a
+local does not reproduce it: GCC propagates it straight back, verified on both
+`func_80041340` and a standalone test. **Unexplained.** Whatever it is, it is
+worth finding: it is the sole residual of `func_80041340` (8 of 55) and part of
+two others.
+
+#### Open: conditional loop invariants are hoisted here and were not there
+
+Second unexplained systematic difference, two independent data points:
+
+* `func_8004B374` — `(u8)arg1`, used only after the first `if` inside the loop,
+  is recomputed every iteration in the original (in a branch delay slot) and
+  hoisted to the preheader by us;
+* `func_8003CCD8` — three global loads, all inside the `if (held & 0x80000000)`
+  arm of the loop, are re-read every iteration in the original and hoisted to
+  the function prologue by us.
+
+Swept with no effect: `-fno-gcse`, `-fno-expensive-optimizations`,
+`-fno-move-all-movables`, `-fno-cse-follow-jumps`, `-fno-thread-jumps`,
+`-fno-strict-aliasing`, `-fno-caller-saves`, `-fno-force-mem`, and all five
+`-O` levels. `loop.c`'s `move_movables` gates were read directly: the
+`m->cond`, `maybe_never` and `may_trap_p` paths all evaluate the same way for
+both, and `rtx_addr_can_trap_p` in 2.95 returns 0 for `SYMBOL_REF`
+unconditionally, so the "loads from symbols may trap" route is not it either.
+
+Marking the three globals `volatile` reproduces the placement exactly and takes
+`func_8003CCD8` to the right length with the loop body aligned 1:1 — but
+`volatile` on a key-repeat delay and period is not a claim the evidence
+supports, so it is **not** being committed. Recorded because the reproduction
+is itself evidence about the mechanism: whatever the original did, its effect
+is indistinguishable from a volatile read.
+
+#### The permuter does move this class, when the base is already correct
+
+`func_8004318C` was parked at 7 of 41 instructions differing after a flag sweep
+and four source shapes. `tools/permute.py` took it to **4**, and the winning
+edit is a legitimate one — introducing a second pointer local aliasing the
+first, which changes nothing about what the function computes. That contradicts
+the earlier entry's "the permuter plateaus at 10" only in the sense that the
+earlier measurement was of a *different* residual; on a function whose length
+and structure are already exact, it is worth running. Read the output before
+using it — the earlier finding that some winning variants are semantically
+wrong still stands.
+
+#### Parked, all with the correct instruction count unless noted
+
+```
+func_80041D60   70/71   one short: the original re-reads obj->unk_08 for the
+                        `& 0x100` test after `|= 0x10`; we CSE the stored value.
+                        volatile overshoots by 6.
+func_80048658   74/68   the original cross-jumps 9 instructions of a duplicated
+                        tail; we emit both copies.  A genuinely shared tail in
+                        the source gives 56, so the duplication is real and the
+                        merge is GCC's.
+func_8004B374   46/74   registers
+func_80041340    8/55   the constant-in-a-register idiom above
+func_8004318C    4/41   epilogue ordering only, after the permuter
+func_8001352C   16/52   registers
+func_80022FF0   17/40   registers; needs -fno-strength-reduce and two pointers
+func_80016D2C   11/44   registers ($s3/$s4 swapped)
+func_8003CCD8   50/72   the conditional-invariant hoist above
+func_8004A43C   13/55   registers, at -Os
+```
+
+Nine of the ten are the same failure: **right length, right structure, wrong
+registers.** That is now unambiguously the dominant residual class, and it is
+not reachable by flags — it is a permuter and source-shape problem.
