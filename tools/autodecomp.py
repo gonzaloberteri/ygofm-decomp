@@ -226,17 +226,31 @@ def attempt(name, inv, tmpdir):
     # assembler's -G (proven -- enabling it globally broke %hi/%lo functions) and
     # almost certainly the optimisation level too.  Search rather than guess;
     # whichever combination reproduces the bytes is the right one.
+    # cc1_G and -fno-strength-reduce are here because both were found to change
+    # the instruction *count*, not just register choice, which is the half of
+    # the search this pass used to skip:
+    #   cc1_G=0 makes cc1 emit its own %hi/%lo, so two uses of one symbol's
+    #     address share a `lui`; with cc1_G=8 gas expands each macro separately
+    #     and the function comes out one instruction long per extra `lui`.
+    #   -fno-strength-reduce stops check_dbra_loop reversing a counted loop into
+    #     a countdown, and changes whether a giv is created at all.
+    # Both land failures in the `size-differs` bucket, which is ~49% of them, so
+    # skipping these knobs made that bucket look like a types problem.
     best = "compile-failed"
-    for opt, as_g, exp_div in [(o, g, d)
-                               for o in ("-O2", "-O3", "-O1", "-Os")
-                               for g in (0, 8)
-                               for d in ((0, 1) if has_div else (0,))]:
+    for opt, as_g, exp_div, cc1_g, extra in [
+            (o, g, d, cg, x)
+            for o in ("-O2", "-O3", "-O1", "-Os")
+            for g in (0, 8)
+            for d in ((0, 1) if has_div else (0,))
+            for cg in (8, 0)
+            for x in ("", ",-fno-strength-reduce")]:
         # "--flags=-O2" as one argv entry, not two: argparse treats a separate
         # "-O2" as an option token and refuses it as a value.  A multi-word
         # value happens to slip through, which is why this only broke here.
         r = subprocess.run([sys.executable, CC, src, obj, "--as-g", str(as_g),
                             "--expand-div", str(exp_div),
-                            "--flags=" + opt],
+                            "--cc1-g", str(cc1_g),
+                            "--flags=" + opt + extra],
                            capture_output=True, text=True)
         if r.returncode != 0:
             continue
@@ -257,7 +271,7 @@ def attempt(name, inv, tmpdir):
         mism = sum(1 for i in range(len(words))
                    if (words[i] & masks[i]) != (orig[i] & masks[i]))
         if mism == 0:
-            return "match", (open(src).read(), as_g, opt, exp_div)
+            return "match", (open(src).read(), as_g, opt, exp_div, cc1_g, extra)
         best = "differs:%d/%d" % (mism, len(words))
     return best, None
 
@@ -334,7 +348,7 @@ def main():
         stats[status.split(":")[0]] = stats.get(status.split(":")[0], 0) + 1
         if status != "match":
             continue
-        body, as_g, opt, exp_div = text
+        body, as_g, opt, exp_div, cc1_g, extra = text
         open(os.path.join(staging, name + ".c"), "w").write(body)
         matched.append((name, f["insns"]))
         over = {}
@@ -344,6 +358,10 @@ def main():
             over["opt"] = opt
         if exp_div:
             over["expand_div"] = exp_div
+        if cc1_g != 8:
+            over["cc1_G"] = cc1_g
+        if extra:
+            over["cc1_extra"] = extra.lstrip(",")
         if over:
             as_overrides["src/auto/%s.c" % name] = over
 
@@ -358,24 +376,44 @@ def main():
     path = os.path.join(REPO, "config", "cflags.json")
     cfg = json.load(open(path))
     cfg.setdefault("files", {})
-    # Replace the src/auto entries rather than merging into them.  This run is
-    # the authority on what src/auto contains, so merging would leave overrides
-    # behind for files it no longer produces, and those stale entries would
-    # silently apply to a future file of the same name.
-    cfg["files"] = {k: v for k, v in cfg["files"].items()
-                    if not k.startswith("src/auto/")}
+    # Only a full run is the authority on what src/auto contains, so only a
+    # full run may drop the src/auto overrides it did not reproduce.  A partial
+    # run that purged them left every other generated file on the *default*
+    # flags -- the .c file still there, still listed, and no longer matching.
+    # That is how `--limit 6` turned 340 ok into 256 ok, 84 failing.
+    if args.all:
+        cfg["files"] = {k: v for k, v in cfg["files"].items()
+                        if not k.startswith("src/auto/")}
     cfg["files"].update(as_overrides)
     cfg["files"] = {k: cfg["files"][k] for k in sorted(cfg["files"])}
     json.dump(cfg, open(path, "w"), indent=2)
     print("recorded flag overrides for %d of %d matched file(s)"
           % (len(as_overrides), len(matched)))
 
-    # single atomic-ish swap: src/auto is never seen partially written
-    if os.path.isdir(OUTDIR):
-        shutil.rmtree(OUTDIR)
-    os.makedirs(os.path.dirname(OUTDIR), exist_ok=True)
-    os.rename(staging, OUTDIR)
-    print("written to src/auto/ (%d file(s))" % len(matched))
+    # How the staged output reaches src/auto depends on whether this run
+    # actually considered every candidate.
+    #
+    # It used to be an unconditional `rmtree(src/auto); rename(staging)`, which
+    # is right for a full run and silently destructive for any other: a
+    # `--limit 6` run replaced 340 files with 6 and deleted 175 matched
+    # functions.  Nothing caught it, because the deleted functions simply fall
+    # back to their assembly and the build stays byte-identical -- the only
+    # symptom is the progress number dropping, which is not a gate.
+    #
+    # So: a full run still swaps, because that is the only way a function that
+    # has *stopped* matching gets removed.  A partial run merges.
+    os.makedirs(OUTDIR, exist_ok=True)
+    if args.all:
+        for stale in os.listdir(OUTDIR):
+            if stale.endswith(".c") and not os.path.exists(
+                    os.path.join(staging, stale)):
+                os.remove(os.path.join(OUTDIR, stale))
+    for f in os.listdir(staging):
+        shutil.copyfile(os.path.join(staging, f), os.path.join(OUTDIR, f))
+    shutil.rmtree(staging)
+    print("written to src/auto/ (%d file(s), %s)"
+          % (len(matched), "full run: stale files removed" if args.all
+             else "partial run: merged, nothing removed"))
     return 0
 
 
