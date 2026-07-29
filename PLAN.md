@@ -2503,3 +2503,60 @@ The general lesson, and it is the same one as the firewall query earlier the
 same day: *a gate only protects what it can observe.* The hash gate proves the
 bytes we emit are right; it says nothing about work that has quietly stopped
 being emitted at all.
+
+### 2026-07-29 — process analysis: where the time goes, and what speeds it up
+
+A session-start audit, before another hand-decompilation wave. The inventory
+behind it (`tools/funcs.py` internals over the todo set, excluding the
+hand-written GTE cluster and the two call-free sound functions):
+
+```
+871 todo functions, 94,632 instructions
+    4-24 insns   149 funcs    2,423 insns   (2.6%)   automation scraps
+   25-99 insns   448 funcs   23,220 insns  (24.5%)   <- the wave's band
+  100-249 insns  207 funcs   32,320 insns  (34.2%)
+  250+ insns      67 funcs   36,669 insns  (38.8%)
+```
+
+**What the record says about conversion rates.** Unedited m2c is exhausted
+(~10% hit rate, all flag knobs now swept — the last widening, `cc1_G` and
+`-fno-strength-reduce`, bought +13 functions and then nothing). Hand
+decompilation is the only earner left: waves 1-2 converted ~25-40% of attempted
+small functions, and the dominant residual everywhere is *right length, right
+structure, wrong registers* (9 of 10 parked near-misses), which no flag moves.
+
+**Speedups, ranked by leverage:**
+
+1. **Parallel subagents on disjoint slices, with the idiom list in the
+   prompt.** The documented waste in wave 1 was four workers rediscovering the
+   same idioms independently. The ~30 verified idioms are now handed to each
+   worker up front. Disjoint slices cost nothing to coordinate because flags
+   live in-file and `match.py`'s object path is per-source-file.
+2. **Work the 25-99 band, not easiest-first.** `funcs.py --candidates` sorts by
+   size, which fronts the 4-24 band — 2,423 instructions *total*. The mid band
+   holds 10x that and is where instructions-matched actually moves.
+3. **Ghidra on demand for the `size-differs` bucket** (442 functions, the
+   dominant failure class: types, struct layouts, signedness).
+   `ghidra_decomp.py` costs ~11 s per function, nearly all JVM/project startup.
+   Cheap per-function; if the bucket becomes the main work, a batch mode that
+   amortises the startup over many functions is the next tool to build.
+4. **The permuter as a background batch over the parked register-class
+   near-misses**, not an interactive tool. Its value is measured: it moved
+   `func_8004318C` 7 -> 4 with a legitimate edit, and does nothing when length
+   or structure is wrong. Run it only on files whose length and structure are
+   already exact, with a wall-clock timeout (it has no plateau detection), and
+   read every winning variant before use — some are semantically wrong.
+5. **The fleet.** `.209` and `.201` were unreachable this session (gateway
+   answers, both hosts time out — offline, not a tooling fault; verified with a
+   ping control). Batch work stays on `.180` until they return. Retry
+   periodically; when they are up, `permute.py` batches move off the
+   interactive box.
+6. **Already cheap, do not re-optimise:** the hash gate (3.4 s), `match.py`
+   (per-file, seconds), `verify_src.py` (parallel). None of these is on the
+   critical path; worker-hours on structure recovery are.
+
+**Deliberately not pursued:** pre-drafting all 448 mid functions through m2c
+(m2c output is a starting shape, not a timesaver — the waves that hand-wrote
+from the disassembly beside an objdump did as well), and touching `reorg.c`/
+`loop.c` for the two call-free sound functions (127 instructions total — the
+smallest open class, left parked).
